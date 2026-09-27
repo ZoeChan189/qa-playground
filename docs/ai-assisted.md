@@ -1,15 +1,11 @@
 # AI-assisted testing exercise
 
-The in-app **Test Ideas** view produces a deterministic checklist. It is not an AI model. Use **Copy AI prompt** to send a requirement to your preferred AI coding assistant, such as GitHub Copilot, and compare its suggestions with the app's actual behavior.
+The AI-assisted page builds a reusable prompt. It does **not** call an AI model, generate test code itself or incur API cost. Paste the prompt into an AI assistant available to your group, then verify its output against this repository.
 
-Recommended classroom exercise:
+1. Choose a topic and enter a concrete requirement. Example: "At 45 sudden virtual users, the API should report errors accurately and recover when traffic drops."
+2. Build and copy the prompt. Ask the external assistant for valid, invalid, boundary and recovery cases, plus one runnable test.
+3. Compare every endpoint, selector, input and expected status with `src/app.js` and the existing tests. Correct invented assumptions.
+4. Run the proposed test locally. Record the observed result and why it passed or failed; do not report an unexecuted suggestion as evidence.
+5. For performance ideas, keep k6 traffic local unless the host operator authorizes it. Compare phase metrics and repeat runs before making claims.
 
-1. Open Test Ideas, enter a requirement and generate the checklist.
-2. Copy the AI prompt into an AI assistant. Ask for concrete test cases and then for one Playwright test.
-3. Check the proposed selectors, data, HTTP status codes and expected results against this repository. Edit incorrect assumptions.
-4. Run the generated test. Record whether it passes on the default app.
-5. Enable the relevant Fault Lab switch and run the same test again. Explain the failure from the report.
-
-Suggested requirement: "A signed-in user can create a task with a title, owner email, priority, status and due date. Invalid values must be rejected."
-
-Review questions: Did the assistant invent a field? Does the test assert a user-visible outcome? Does it cover both a valid leap day and an impossible date? Could it pass while the app is broken? The AI output is a draft; the observed test result is the evidence.
+Review question: Can the generated assertion pass even if the target is broken? A useful AI output needs human review and a real test run.

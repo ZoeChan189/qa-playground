@@ -3,221 +3,81 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#155e75" />
-    <title>QA Playground</title>
+    <meta name="theme-color" content="#f3f6f7" />
+    <title>QA Lab</title>
     <link rel="stylesheet" href="/styles.css" />
     <script type="module" src="/app.js"></script>
   </head>
   <body>
-    <div id="toast-region" class="toast-region" aria-live="polite"></div>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand"><span class="brand-mark">QA</span><div><strong>QA Lab</strong><small>SWT301 testing workspace</small></div></div>
+        <p class="nav-caption">TOPICS</p>
+        <nav class="topic-nav" aria-label="Testing topics">
+          <button class="topic-link active" type="button" data-view="performance"><img src="/icons/activity.svg" alt="" />Performance<span class="topic-emphasis">Main</span></button>
+          <button class="topic-link" type="button" data-view="unit"><img src="/icons/flask-conical.svg" alt="" />Unit</button>
+          <button class="topic-link" type="button" data-view="api"><img src="/icons/braces.svg" alt="" />API</button>
+          <button class="topic-link" type="button" data-view="e2e"><img src="/icons/mouse-pointer-click.svg" alt="" />Web E2E</button>
+          <button class="topic-link" type="button" data-view="mobile"><img src="/icons/smartphone.svg" alt="" />Mobile web</button>
+          <button class="topic-link" type="button" data-view="visual"><img src="/icons/scan.svg" alt="" />Visual</button>
+          <button class="topic-link" type="button" data-view="ai"><img src="/icons/sparkles.svg" alt="" />AI-assisted</button>
+          <button class="topic-link" type="button" data-view="ci"><img src="/icons/git-branch.svg" alt="" />CI/CD</button>
+        </nav>
+        <div class="sidebar-bottom"><span class="local-dot"></span> Local-first load testing<a href="https://github.com/ZoeChan189/qa-playground" target="_blank" rel="noopener noreferrer">GitHub repository <img src="/icons/external-link.svg" alt="" /></a></div>
+      </aside>
 
-    <main id="login-view" class="login-layout">
-      <section class="login-panel" aria-labelledby="login-title">
-        <div class="brand-lockup">
-          <div class="brand-mark" aria-hidden="true">QA</div>
-          <div>
-            <p class="brand-name">QA Playground</p>
-            <p class="brand-meta">Test target workspace</p>
-          </div>
-        </div>
+      <div class="main-shell">
+        <header class="topbar"><div class="topbar-title"><span>Testing lab</span><span class="crumb-separator">/</span><strong id="current-topic">Performance</strong></div><div id="server-status" class="server-status" aria-live="polite"><span class="status-dot"></span> Checking API</div></header>
+        <main id="main-content" class="content">
+          <section id="view-performance" class="view active" aria-labelledby="performance-title">
+            <div class="page-heading"><div><p class="eyebrow">PRIMARY TOPIC</p><h1 id="performance-title">Performance testing</h1><p class="subline">Stress, spike and soak against a real CPU-bound API workload.</p></div><span class="target-badge">Target <code>GET /api/perf/work</code></span></div>
 
-        <form id="login-form" data-testid="login-form" novalidate>
-          <div class="section-heading">
-            <p class="eyebrow">Demo workspace</p>
-            <h1 id="login-title">Sign in</h1>
-          </div>
-
-          <label class="field">
-            <span>Email</span>
-            <input id="login-email" name="email" type="email" autocomplete="username" required />
-          </label>
-          <label class="field">
-            <span>Password</span>
-            <input id="login-password" name="password" type="password" autocomplete="current-password" required />
-          </label>
-          <p id="login-error" class="form-error" role="alert"></p>
-
-          <button class="button primary full-width" type="submit">Sign in</button>
-          <div class="button-row login-actions">
-            <button id="fill-demo" class="button secondary" type="button">Fill demo account</button>
-            <button id="fill-locked" class="button text-button" type="button">Use locked account</button>
-          </div>
-        </form>
-      </section>
-
-      <section class="login-visual" aria-label="Workspace status">
-        <div class="signal-board">
-          <div class="signal-header">
-            <span>Test surface</span>
-            <span class="status-badge"><i></i> Ready</span>
-          </div>
-          <div class="signal-row"><span>Web UI</span><strong>Responsive</strong></div>
-          <div class="signal-row"><span>REST API</span><strong>/api</strong></div>
-          <div class="signal-row"><span>Fault profiles</span><strong>5</strong></div>
-          <div class="signal-row"><span>Seed tasks</span><strong>3</strong></div>
-          <div class="signal-bars" aria-hidden="true">
-            <span style="height: 32%"></span><span style="height: 48%"></span><span style="height: 68%"></span>
-            <span style="height: 54%"></span><span style="height: 82%"></span><span style="height: 64%"></span>
-            <span style="height: 91%"></span><span style="height: 72%"></span><span style="height: 58%"></span>
-          </div>
-        </div>
-      </section>
-    </main>
-
-    <div id="app-view" class="app-shell" hidden>
-      <header class="topbar">
-        <div class="brand-lockup compact">
-          <div class="brand-mark" aria-hidden="true">QA</div>
-          <div>
-            <p class="brand-name">QA Playground</p>
-            <p class="brand-meta">Task operations</p>
-          </div>
-        </div>
-        <div class="topbar-actions">
-          <span id="api-status" class="status-badge"><i></i> API online</span>
-          <span id="fault-count" class="fault-count">0 faults</span>
-          <button id="logout-button" class="button secondary" type="button">Sign out</button>
-        </div>
-      </header>
-
-      <nav class="tabs" aria-label="Workspace views">
-        <button class="tab active" data-view="tasks" type="button">Tasks</button>
-        <button class="tab" data-view="api" type="button">API Console</button>
-        <button class="tab" data-view="faults" type="button">Fault Lab</button>
-        <button class="tab" data-view="ideas" type="button">Test Ideas</button>
-      </nav>
-
-      <main class="workspace">
-        <section id="view-tasks" class="view-panel active" data-testid="tasks-view">
-          <div class="workspace-header">
-            <div>
-              <p class="eyebrow">Delivery board</p>
-              <h1>Task operations</h1>
+            <div class="metric-strip" aria-label="Live server telemetry">
+              <div><span>Active jobs</span><strong id="metric-active">0</strong><small id="metric-capacity">of 24 capacity</small></div>
+              <div><span>Completed</span><strong id="metric-completed">0</strong><small>since server start</small></div>
+              <div><span>Rejected</span><strong id="metric-rejected">0</strong><small>HTTP 503</small></div>
+              <div><span>Server p95</span><strong id="metric-p95">–</strong><small>last 1,000 jobs</small></div>
+              <div><span>Node heap</span><strong id="metric-heap">–</strong><small>actual process memory</small></div>
             </div>
-            <div class="button-row"><button id="reset-data-button" class="button secondary" type="button">Reset data</button><button id="new-task-button" class="button primary" type="button">New task</button></div>
-          </div>
 
-          <div class="stats-strip" aria-label="Task statistics">
-            <div><span>Total</span><strong id="stat-total">0</strong></div>
-            <div><span>To do</span><strong id="stat-todo">0</strong></div>
-            <div><span>In progress</span><strong id="stat-progress">0</strong></div>
-            <div><span>Done</span><strong id="stat-done">0</strong></div>
-            <div class="risk-stat"><span>High risk</span><strong id="stat-risk">0</strong></div>
-          </div>
-
-          <div class="toolbar">
-            <label class="search-field">
-              <span class="sr-only">Search tasks</span>
-              <input id="task-search" type="search" placeholder="Search title or owner" />
-            </label>
-            <label>
-              <span class="sr-only">Filter status</span>
-              <select id="status-filter">
-                <option value="">All statuses</option>
-                <option value="todo">To do</option>
-                <option value="in-progress">In progress</option>
-                <option value="done">Done</option>
-              </select>
-            </label>
-            <label>
-              <span class="sr-only">Filter priority</span>
-              <select id="priority-filter">
-                <option value="">All priorities</option>
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-              </select>
-            </label>
-            <span id="response-time" class="response-time">0 ms</span>
-          </div>
-
-          <div class="table-frame">
-            <table>
-              <thead>
-                <tr><th>Task</th><th>Owner</th><th>Priority</th><th>Status</th><th>Due</th><th aria-label="Actions"></th></tr>
-              </thead>
-              <tbody id="task-rows"></tbody>
-            </table>
-            <div id="empty-state" class="empty-state" hidden>No tasks match the current filters.</div>
-          </div>
-        </section>
-
-        <section id="view-api" class="view-panel" data-testid="api-view">
-          <div class="workspace-header">
-            <div><p class="eyebrow">Request workbench</p><h1>API Console</h1></div>
-            <button id="send-request" class="button primary" type="button">Send request</button>
-          </div>
-          <div class="api-grid">
-            <div class="api-controls">
-              <label class="field">
-                <span>Endpoint</span>
-                <select id="api-endpoint">
-                  <option value="health">GET /api/health</option>
-                  <option value="tasks">GET /api/tasks</option>
-                  <option value="ideas">POST /api/test-ideas</option>
-                  <option value="performance">GET /api/performance?profile=load</option>
-                </select>
-              </label>
-              <label class="field">
-                <span>Request body</span>
-                <textarea id="api-body" rows="9" spellcheck="false">{
-  "requirement": "A user can create a high-priority task"
-}</textarea>
-              </label>
+            <div class="section-bar"><div><h2>Load profile</h2><p>Planned virtual users, not measured throughput</p></div><div class="segmented" role="group" aria-label="Performance scenario"><button type="button" data-scenario="load">Load</button><button type="button" data-scenario="stress" class="selected">Stress</button><button type="button" data-scenario="spike">Spike</button><button type="button" data-scenario="soak">Soak</button></div></div>
+            <div class="profile-layout">
+              <div class="chart-area"><div class="chart-topline"><strong id="chart-title">Stress: ramp to capacity</strong><span id="chart-duration">34 seconds</span></div><svg id="vu-chart" viewBox="0 0 760 245" role="img" aria-label="Planned virtual users over time"></svg><div class="chart-axis"><span>0 s</span><span id="chart-end">34 s</span></div></div>
+              <div class="profile-details"><p class="eyebrow">SCENARIO</p><h3 id="profile-name">Stress</h3><p id="profile-purpose" class="profile-purpose"></p><dl><div><dt>Peak users</dt><dd id="profile-vus">40 VUs</dd></div><div><dt>PBKDF2 work</dt><dd id="profile-work">60,000 iterations</dd></div><div><dt>p95 limit</dt><dd id="profile-p95">900 ms</dd></div><div><dt>Error limit</dt><dd id="profile-error">15%</dd></div></dl><div class="command-block"><code id="perf-command">npm run perf:stress</code><button id="copy-perf-command" class="icon-button" type="button" title="Copy command" aria-label="Copy performance command"><img src="/icons/copy.svg" alt="" /></button></div></div>
             </div>
-            <div class="response-pane">
-              <div class="response-meta"><strong id="api-result-status">Not sent</strong><span id="api-result-time">0 ms</span></div>
-              <pre id="api-response" tabindex="0">Select an endpoint and send a request.</pre>
+
+            <div class="details-grid">
+              <div class="detail-section"><div class="detail-heading"><h2>Single request probe</h2><span>1 request only</span></div><div class="probe-controls"><label>Work factor<input id="probe-work" type="number" min="1" max="100" value="60" /></label><button id="run-probe" class="button primary" type="button"><img src="/icons/play.svg" alt="" />Run probe</button></div><div id="probe-result" class="result-line" role="status">No request sent</div><p class="fine-print">Load is generated by k6 on your computer. This button never starts a stress run.</p></div>
+              <div class="detail-section"><div class="detail-heading"><h2>Live heap trend</h2><span id="telemetry-updated">Waiting for sample</span></div><svg id="heap-chart" viewBox="0 0 450 110" role="img" aria-label="Recent Node heap samples"></svg><p class="fine-print">Actual Node heap samples while this page is open. A rising line alone does not prove a memory leak.</p></div>
             </div>
-          </div>
-        </section>
 
-        <section id="view-faults" class="view-panel" data-testid="faults-view">
-          <div class="workspace-header">
-            <div><p class="eyebrow">Controlled failures</p><h1>Fault Lab</h1></div>
-            <button id="reset-faults" class="button secondary" type="button">Reset faults</button>
-          </div>
-          <div class="fault-list">
-            <label class="fault-row"><span><strong>Validation bypass</strong><small>Invalid task data is accepted by POST /api/tasks.</small></span><input type="checkbox" value="validation-bypass" /></label>
-            <label class="fault-row"><span><strong>Slow API</strong><small>Task requests wait 1.2 seconds before responding.</small></span><input type="checkbox" value="api-delay" /></label>
-            <label class="fault-row"><span><strong>API unavailable</strong><small>GET /api/tasks returns HTTP 503.</small></span><input type="checkbox" value="api-error" /></label>
-            <label class="fault-row"><span><strong>Visual shift</strong><small>Header alignment and primary color change.</small></span><input type="checkbox" value="visual-shift" /></label>
-            <label class="fault-row"><span><strong>Mobile overflow</strong><small>The app becomes wider than a mobile viewport.</small></span><input type="checkbox" value="mobile-overflow" /></label>
-          </div>
-        </section>
+            <div class="section-bar spaced"><div><h2>k6 result analysis</h2><p>JSON summaries stay in this browser</p></div><label class="button secondary file-button"><img src="/icons/upload.svg" alt="" />Open summary<input id="summary-file" type="file" accept=".json,application/json" disabled /></label></div>
+            <div id="summary-empty" class="empty-band">Run a local k6 script, then open its file from <code>results/</code>.</div>
+            <div id="summary-result" class="summary-result" hidden><div><span>Scenario</span><strong id="summary-profile">–</strong></div><div><span>Requests</span><strong id="summary-requests">–</strong></div><div><span>p95</span><strong id="summary-p95">–</strong></div><div><span>Error rate</span><strong id="summary-errors">–</strong></div><div><span>Peak active</span><strong id="summary-active">–</strong></div><div><span>Heap range</span><strong id="summary-heap">–</strong></div><div class="summary-verdict"><span>Thresholds</span><strong id="summary-verdict">–</strong></div></div>
+            <div id="phase-section" hidden><div class="section-bar spaced"><div><h2>Phase comparison</h2><p>Measured request latency and failures by test stage</p></div></div><div class="table-wrap"><table class="case-table"><thead><tr><th>Phase</th><th>p95</th><th>Error rate</th></tr></thead><tbody id="phase-rows"></tbody></table></div><p id="heap-comparison" class="fine-print" hidden></p></div>
+            <p id="summary-message" class="inline-message" role="status"></p>
 
-        <section id="view-ideas" class="view-panel" data-testid="ideas-view">
-          <div class="workspace-header">
-            <div><p class="eyebrow">Review assistant</p><h1>Test Ideas</h1></div>
-            <div class="button-row"><button id="copy-ai-prompt" class="button secondary" type="button">Copy AI prompt</button><button id="generate-ideas" class="button primary" type="button">Generate checklist</button></div>
-          </div>
-          <label class="field requirement-field">
-            <span>Requirement</span>
-            <textarea id="requirement-input" rows="5">A signed-in user can create a task with a title, owner, priority, status and due date.</textarea>
-          </label>
-          <label class="field prompt-field"><span>Prompt for an AI coding assistant</span><textarea id="ai-prompt" rows="8" readonly></textarea></label>
-          <div id="idea-results" class="idea-results" aria-live="polite"></div>
-        </section>
-      </main>
+            <div class="section-bar spaced"><div><h2>Key cases</h2><p id="case-context">Stress: find the point where latency or errors rise</p></div></div>
+            <div class="table-wrap"><table class="case-table"><thead><tr><th>Case</th><th>Observe</th><th>Decision</th></tr></thead><tbody id="perf-case-rows"></tbody></table></div>
+          </section>
+
+          <section id="view-unit" class="view" aria-labelledby="unit-title"><div class="page-heading"><div><p class="eyebrow">FUNCTION LEVEL</p><h1 id="unit-title">Unit testing</h1><p class="subline">Pure threshold evaluation: boundary values, invalid input and combined rules.</p></div><code class="source-tag">public/shared/evaluation.js</code></div><form id="unit-form" class="form-surface"><div class="form-grid"><label>Observed p95 (ms)<input id="unit-p95" type="number" min="0" step="0.01" value="280" /></label><label>Error rate (%)<input id="unit-errors" type="number" min="0" max="100" step="0.01" value="0.5" /></label><label>p95 limit (ms)<input id="unit-p95-limit" type="number" min="0.01" step="0.01" value="500" /></label><label>Error limit (%)<input id="unit-error-limit" type="number" min="0.01" max="100" step="0.01" value="1" /></label></div><button class="button primary" type="submit"><img src="/icons/play.svg" alt="" />Evaluate</button><div id="unit-result" class="result-line" role="status">Ready to evaluate</div></form><div class="section-bar spaced"><h2>Key cases</h2><code>npm run test:unit</code></div><div class="table-wrap"><table class="case-table"><thead><tr><th>Case</th><th>Input</th><th>Expected</th></tr></thead><tbody><tr><td>U01 · pass</td><td>p95 280 &lt; 500 ms, errors 0.5 &lt; 1%</td><td>Pass</td></tr><tr><td>U02 · boundary</td><td>p95 equals 500 ms</td><td>Fail</td></tr><tr><td>U03 · invalid</td><td>Negative latency</td><td>Validation error</td></tr><tr><td>U04 · combination</td><td>Latency passes, errors exceed limit</td><td>Fail</td></tr></tbody></table></div></section>
+
+          <section id="view-api" class="view" aria-labelledby="api-title"><div class="page-heading"><div><p class="eyebrow">HTTP CONTRACT</p><h1 id="api-title">API testing</h1><p class="subline">Status codes, schema, validation and missing resources.</p></div><code class="source-tag">npm run test:api</code></div><div class="api-grid"><div class="form-surface"><label>Request<select id="api-preset"><option value="health">GET /api/health</option><option value="metrics">GET /api/perf/metrics</option><option value="evaluate">POST /api/evaluate · valid</option><option value="invalid">POST /api/evaluate · invalid</option><option value="missing">GET /api/not-found</option></select></label><label>JSON body<textarea id="api-body" rows="9" spellcheck="false"></textarea></label><button id="send-api" class="button primary" type="button"><img src="/icons/play.svg" alt="" />Send request</button></div><div class="response-surface"><div class="response-header"><strong id="api-response-status">Not sent</strong><span id="api-response-time">–</span></div><pre id="api-response" tabindex="0">Select a request and send it.</pre></div></div><div class="section-bar spaced"><h2>Key cases</h2></div><div class="table-wrap"><table class="case-table"><thead><tr><th>Case</th><th>Request</th><th>Expected</th></tr></thead><tbody><tr><td>A01 · health</td><td>GET /api/health</td><td>200 + JSON</td></tr><tr><td>A02 · invalid</td><td>POST /api/evaluate, negative p95</td><td>400 + field error</td></tr><tr><td>A03 · missing</td><td>GET /api/not-found</td><td>404 + JSON</td></tr><tr><td>A04 · capacity</td><td>Concurrent GET /api/perf/work</td><td>503 at queue limit</td></tr></tbody></table></div></section>
+
+          <section id="view-e2e" class="view" aria-labelledby="e2e-title"><div class="page-heading"><div><p class="eyebrow">BROWSER WORKFLOW</p><h1 id="e2e-title">Web E2E testing</h1><p class="subline">Create a test plan through a real UI-to-API flow.</p></div><code class="source-tag">npm run test:e2e</code></div><div class="steps" aria-label="Plan progress"><span class="current" data-step="1">1 · Details</span><span data-step="2">2 · Review</span><span data-step="3">3 · Saved</span></div><div id="plan-step-1" class="form-surface"><form id="plan-form" novalidate><div class="form-grid"><label>Plan name<input id="plan-name" maxlength="40" placeholder="Checkout spike check" required /><small id="plan-error-name"></small></label><label>Scenario<select id="plan-scenario"><option value="stress">Stress</option><option value="spike">Spike</option><option value="soak">Soak</option></select><small id="plan-error-scenario"></small></label><label>Peak virtual users<input id="plan-vus" type="number" min="1" max="50" value="40" required /><small id="plan-error-targetVus"></small></label><label>Notes<input id="plan-notes" maxlength="200" placeholder="Optional context" /><small id="plan-error-notes"></small></label></div><button class="button primary" type="submit">Review plan</button></form></div><div id="plan-step-2" class="form-surface" hidden><h2>Review plan</h2><dl id="plan-review" class="review-list"></dl><div class="button-row"><button id="plan-back" class="button secondary" type="button">Back</button><button id="plan-save" class="button primary" type="button">Save plan</button></div><p id="plan-save-error" class="error-text" role="alert"></p></div><div id="plan-step-3" class="form-surface" hidden><h2>Plan saved</h2><p id="plan-saved-copy"></p><code id="plan-saved-id"></code><div class="button-row"><button id="plan-new" class="button secondary" type="button">Create another</button></div></div><div class="section-bar spaced"><h2>Key cases</h2></div><div class="table-wrap"><table class="case-table"><thead><tr><th>Case</th><th>Action</th><th>Expected</th></tr></thead><tbody><tr><td>E01 · validation</td><td>Submit a 1-character name</td><td>Stay on details with error</td></tr><tr><td>E02 · navigation</td><td>Review, back, edit, review</td><td>Values are preserved</td></tr><tr><td>E03 · persistence</td><td>Save a valid plan</td><td>201 and retrievable ID</td></tr></tbody></table></div></section>
+
+          <section id="view-mobile" class="view" aria-labelledby="mobile-title"><div class="page-heading"><div><p class="eyebrow">RESPONSIVE WEB</p><h1 id="mobile-title">Mobile testing</h1><p class="subline">Viewport, overflow, touch targets and the same plan workflow.</p></div><code class="source-tag">Playwright mobile project</code></div><div class="mobile-measure"><div><span>Viewport</span><strong id="mobile-viewport">–</strong></div><div><span>Page width</span><strong id="mobile-page-width">–</strong></div><div><span>Touch support</span><strong id="mobile-touch">–</strong></div><div><span>Overflow</span><strong id="mobile-overflow">–</strong></div></div><div class="button-row spaced"><button id="mobile-check" class="button primary" type="button"><img src="/icons/scan.svg" alt="" />Check layout</button><button id="mobile-open-plan" class="button secondary" type="button">Open plan flow</button></div><div class="section-bar spaced"><h2>Key cases</h2></div><div class="table-wrap"><table class="case-table"><thead><tr><th>Case</th><th>Observe</th><th>Expected</th></tr></thead><tbody><tr><td>M01 · portrait</td><td>412 px viewport</td><td>No page-level overflow</td></tr><tr><td>M02 · controls</td><td>Tap navigation and form controls</td><td>Visible and operable</td></tr><tr><td>M03 · workflow</td><td>Save a plan at mobile width</td><td>Same result as desktop</td></tr></tbody></table></div></section>
+
+          <section id="view-visual" class="view" aria-labelledby="visual-title"><div class="page-heading"><div><p class="eyebrow">SCREENSHOT DIFF</p><h1 id="visual-title">Visual regression</h1><p class="subline">Compare a stable specimen to its checked-in Playwright baseline.</p></div><code class="source-tag">npm run test:visual</code></div><div class="segmented visual-toggle" role="group" aria-label="Specimen variant"><button type="button" data-visual="baseline" class="selected">Baseline</button><button type="button" data-visual="shifted">Shifted variant</button></div><div id="visual-specimen" class="visual-specimen"><div class="specimen-heading"><div><span>RELEASE MONITOR</span><h2>Checkout service</h2></div><span class="specimen-state">Healthy</span></div><div class="specimen-metrics"><div><span>p95 latency</span><strong>184 ms</strong></div><div><span>Error rate</span><strong>0.3%</strong></div><div><span>Availability</span><strong>99.9%</strong></div></div><div class="specimen-row"><span>API gateway</span><b>Operational</b></div><div class="specimen-row"><span>Order service</span><b>Operational</b></div><div class="specimen-row"><span>Payment service</span><b>Operational</b></div></div><div class="section-bar spaced"><h2>Key cases</h2></div><div class="table-wrap"><table class="case-table"><thead><tr><th>Case</th><th>Variant</th><th>Expected</th></tr></thead><tbody><tr><td>V01 · baseline</td><td>Default specimen</td><td>Screenshot matches</td></tr><tr><td>V02 · regression</td><td>Shifted variant</td><td>Screenshot diff detects change</td></tr></tbody></table></div></section>
+
+          <section id="view-ai" class="view" aria-labelledby="ai-title"><div class="page-heading"><div><p class="eyebrow">HUMAN-REVIEWED</p><h1 id="ai-title">AI-assisted testing</h1><p class="subline">Draft a test prompt, then review and run the generated tests.</p></div><span class="source-tag">No API key needed</span></div><div class="form-surface"><label>Target topic<select id="ai-topic"><option value="performance">Performance</option><option value="api">API</option><option value="e2e">Web E2E</option><option value="unit">Unit</option><option value="mobile">Mobile web</option></select></label><label>Requirement<textarea id="ai-requirement" rows="4">The system should remain responsive as concurrent users increase, and recover after a sudden traffic spike.</textarea></label><div class="button-row"><button id="ai-build" class="button primary" type="button">Build prompt</button><button id="ai-copy" class="button secondary" type="button"><img src="/icons/copy.svg" alt="" />Copy prompt</button></div><label>Prompt<textarea id="ai-output" rows="11" readonly></textarea></label></div><div class="section-bar spaced"><h2>Review checklist</h2></div><div class="checklist"><label><input type="checkbox" /> Assertions match the real API contract</label><label><input type="checkbox" /> Boundary and failure paths are included</label><label><input type="checkbox" /> Generated code was run locally or in CI</label><label><input type="checkbox" /> Results were checked by a person</label></div></section>
+
+          <section id="view-ci" class="view" aria-labelledby="ci-title"><div class="page-heading"><div><p class="eyebrow">AUTOMATION</p><h1 id="ci-title">CI/CD and reporting</h1><p class="subline">The repository workflow checks every push and pull request.</p></div><a class="button secondary" href="https://github.com/ZoeChan189/qa-playground/actions" target="_blank" rel="noopener noreferrer">Open Actions <img src="/icons/external-link.svg" alt="" /></a></div><div class="pipeline"><div><b>01</b><span>Install dependencies</span><code>npm ci</code></div><div><b>02</b><span>Unit and API</span><code>npm test</code></div><div><b>03</b><span>Desktop and mobile</span><code>npm run test:e2e</code></div><div><b>04</b><span>Failure report</span><code>Playwright artifact</code></div></div><div class="section-bar spaced"><h2>Key cases</h2></div><div class="table-wrap"><table class="case-table"><thead><tr><th>Case</th><th>Trigger</th><th>Expected</th></tr></thead><tbody><tr><td>C01 · push</td><td>Push code to main</td><td>Workflow runs and reports status</td></tr><tr><td>C02 · regression</td><td>Assertion fails in a pull request</td><td>Workflow fails; report is uploaded</td></tr></tbody></table></div><p class="fine-print spaced">Load scripts are deliberately not run in CI or on the public host.</p></section>
+        </main>
+      </div>
     </div>
-
-    <dialog id="task-dialog">
-      <form id="task-form" method="dialog" novalidate>
-        <div class="dialog-header">
-          <div><p class="eyebrow">Task record</p><h2 id="task-dialog-title">New task</h2></div>
-          <button id="close-task-dialog" class="icon-button" type="button" title="Close" aria-label="Close task form">×</button>
-        </div>
-        <input id="task-id" type="hidden" />
-        <label class="field"><span>Title</span><input id="task-title" name="title" aria-label="Title" aria-describedby="task-title-error" maxlength="80" required /><small id="task-title-error" data-error="title"></small></label>
-        <label class="field"><span>Owner email</span><input id="task-owner" name="ownerEmail" type="email" aria-label="Owner email" aria-describedby="task-owner-error" required /><small id="task-owner-error" data-error="ownerEmail"></small></label>
-        <div class="form-grid">
-          <label class="field"><span>Priority</span><select id="task-priority" name="priority"><option>low</option><option selected>medium</option><option>high</option></select></label>
-          <label class="field"><span>Status</span><select id="task-status" name="status"><option value="todo">todo</option><option value="in-progress">in-progress</option><option value="done">done</option></select></label>
-        </div>
-        <label class="field"><span>Due date</span><input id="task-due" name="dueDate" type="date" aria-label="Due date" aria-describedby="task-due-error" required /><small id="task-due-error" data-error="dueDate"></small></label>
-        <p id="task-form-error" class="form-error" role="alert"></p>
-        <div class="dialog-actions"><button id="cancel-task" class="button secondary" type="button">Cancel</button><button class="button primary" type="submit">Save task</button></div>
-      </form>
-    </dialog>
+    <div id="toast-region" class="toast-region" aria-live="polite"></div>
   </body>
 </html>

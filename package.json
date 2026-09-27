@@ -2,7 +2,7 @@
   "name": "qa-playground",
   "version": "1.0.0",
   "private": true,
-  "description": "A shareable full-stack playground for demonstrating common software testing topics.",
+  "description": "A local-first testing lab with a real performance workload and focused examples for eight testing topics.",
   "type": "module",
   "main": "src/server.js",
   "scripts": {
@@ -12,20 +12,25 @@
     "test:unit": "vitest run tests/unit",
     "test:api": "vitest run tests/api",
     "test:e2e": "playwright test --grep-invert @demo-fail",
-    "test:visual": "playwright test tests/e2e/visual.spec.js",
+    "test:visual": "playwright test tests/e2e/visual.spec.js --grep-invert @demo-fail",
     "test:demo-failures": "playwright test --grep @demo-fail",
     "test:all": "npm run test && npm run test:e2e",
+    "perf:load": "node src/cli/run-k6.js load",
+    "perf:stress": "node src/cli/run-k6.js stress",
+    "perf:spike": "node src/cli/run-k6.js spike",
+    "perf:soak": "node src/cli/run-k6.js soak",
     "report": "playwright show-report"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
-    "express": "^5.1.0"
+    "express": "^5.1.0",
+    "lucide-static": "^1.48.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",
     "supertest": "^7.1.4",
-    "vitest": "^3.2.4"
+    "vitest": "^4.1.11"
   }
 }

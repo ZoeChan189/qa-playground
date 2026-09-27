@@ -1,30 +1,15 @@
 import { expect, test } from "@playwright/test";
 
-test("task board visual baseline", async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== "desktop-chromium", "Desktop screenshot baseline only");
-  await page.goto("/");
-  await page.getByRole("button", { name: "Fill demo account" }).click();
-  await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  await expect(page.locator("#task-rows tr")).toHaveCount(3);
-  await expect(page.locator("#view-tasks")).toHaveScreenshot("task-board.png", {
-    animations: "disabled",
-    mask: [page.locator("#response-time")],
-    maxDiffPixelRatio: 0.02,
-  });
+test("visual specimen matches the baseline", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop-chromium", "Desktop baseline only");
+  await page.goto("/#visual");
+  await expect(page.getByRole("heading", { name: "Visual regression" })).toBeVisible();
+  await expect(page.locator("#visual-specimen")).toHaveScreenshot("visual-specimen.png", { maxDiffPixelRatio: 0.015 });
 });
 
-test("@demo-fail visual test detects a shifted task board", async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== "desktop-chromium", "Desktop visual demonstration only");
-  await page.goto("/");
-  await page.getByRole("button", { name: "Fill demo account" }).click();
-  await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  await page.getByRole("button", { name: "Fault Lab" }).click();
-  await page.getByRole("checkbox", { name: /Visual shift/ }).check();
-  await page.getByRole("button", { name: "Tasks" }).click();
-  await expect(page.locator("#task-rows tr")).toHaveCount(3);
-  await expect(page.locator("#view-tasks")).toHaveScreenshot("task-board.png", {
-    animations: "disabled",
-    mask: [page.locator("#response-time")],
-    maxDiffPixelRatio: 0.001,
-  });
+test("@demo-fail shifted specimen is caught by screenshot comparison", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop-chromium", "Desktop failure demonstration only");
+  await page.goto("/#visual");
+  await page.getByRole("button", { name: "Shifted variant" }).click();
+  await expect(page.locator("#visual-specimen")).toHaveScreenshot("visual-specimen.png", { maxDiffPixelRatio: 0.001 });
 });

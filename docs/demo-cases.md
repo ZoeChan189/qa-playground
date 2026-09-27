@@ -1,22 +1,34 @@
-# Classroom demo cases
+# Classroom test case matrix
 
-The app is the **system under test**. A test passes when the observed result matches the expected result below. Fault switches deliberately change the system so a previously passing assertion can fail.
+The app is the **system under test**. A displayed case is a test idea; a passing assertion or recorded k6 measurement is the evidence. Run the commands from the repository root with the server running where required.
 
-| ID | Topic | Action | Expected result |
+| ID | Topic | Steps / input | Expected observation |
 | --- | --- | --- | --- |
-| U1 | Unit | Run `npm run test:unit` | Normalization, valid leap day, impossible dates, invalid fields, statistics and test-idea rules pass. |
-| A1 | API | Run `npm run test:api` | Login, authorization, isolated task data, CRUD, filtering, reset, malformed JSON and status codes pass. |
-| A2 | API fault | Send `POST /api/tasks` with `X-Demo-Faults: validation-bypass` and an invalid task | Server incorrectly returns 201; the `@demo-fail` validation assertion detects the defect. |
-| E1 | Web E2E | Run `npm run test:e2e` on desktop Chromium | Sign-in, invalid form messages, create, search/filter, edit, API Console and checklist pass. |
-| M1 | Mobile web | Run `npm run test:e2e` on mobile Chromium | Same core workflow works at mobile size without page-level horizontal overflow; the task table itself can scroll. |
-| M2 | Mobile fault | Enable **Mobile overflow**, then run `npm run test:demo-failures` | The viewport-width assertion fails as intended. This is not native Android/iOS testing. |
-| P1 | Performance load | Run `k6 run k6/load.js` | At 5 virtual users, compare p95 response time and error rate with the script thresholds. |
-| P2 | Performance stress | Run `k6 run k6/stress.js` | Gradual growth toward 40 virtual users can cross the latency threshold and produce HTTP 503. |
-| P3 | Performance spike | Run `k6 run k6/spike.js` | Sudden jump toward 50 virtual users can cross the latency threshold and produce HTTP 503. |
-| P4 | Performance soak | Run `k6 run k6/soak.js` | Sustained traffic shows latency and a rising **simulated** memory metric; this is not real RAM measurement. |
-| V1 | Visual | Run `npm run test:visual` | Task board screenshot matches the committed Windows Chromium baseline. |
-| V2 | Visual fault | Enable **Visual shift**, then run `npm run test:demo-failures` | Screenshot comparison fails against that same baseline. |
-| AI1 | AI-assisted | Open **Test Ideas**, enter a requirement, generate the checklist and copy the AI prompt | Review suggested cases; use an external AI assistant to draft code, then verify and run it. The app does not call an AI model. |
-| C1 | CI/CD | Push a commit or open a pull request | GitHub Actions runs unit, API and browser tests; on failure it uploads the Playwright report. |
+| U01 | Unit | Evaluate p95=280 ms, errors=0.5%, limits=500 ms and 1%; `npm run test:unit` | Pass: both measurements are strictly below limits. |
+| U02 | Unit boundary | Set p95 equal to its limit | Fail: equality breaches the strict `<` rule. |
+| U03 | Unit invalid | Call evaluator with negative p95 or an empty rate | Validation error, not a false pass. |
+| A01 | API | Send `GET /api/health`; `npm run test:api` | HTTP 200 with JSON service identifier. |
+| A02 | API invalid | Send negative p95 to `POST /api/evaluate` | HTTP 400 with field error. |
+| A03 | API missing | Send `GET /api/not-found` or look up an unknown plan ID | HTTP 404 JSON. |
+| A04 | API capacity | More than 24 in-flight `GET /api/perf/work` calls | HTTP 503 with `Retry-After`; no unlimited work queue. |
+| E01 | Web E2E | Enter a one-character plan name, review | Remain on the form with a validation message. |
+| E02 | Web E2E | Enter valid plan, review, go back, edit, save; `npm run test:e2e` | Values persist across steps; API creates and retrieves the same plan. |
+| M01 | Mobile web | Open at 412 px and run mobile Playwright project | No page-level horizontal overflow; navigation and plan form remain usable. |
+| V01 | Visual | `npm run test:visual` | Stable specimen matches committed baseline. |
+| V02 | Visual regression | `npm run test:demo-failures` | Shifted specimen fails screenshot comparison intentionally. |
+| AI01 | AI-assisted | Build prompt, ask an external AI to draft a test, inspect and execute it | Human verifies selectors, assertions and actual result; generated prose alone is not a test pass. |
+| C01 | CI/CD | Push or open PR | GitHub Actions runs unit, API, browser and visual checks. |
+| C02 | CI reporting | A browser assertion fails | Workflow is red and uploads the Playwright report on failure. |
 
-`npm run test:demo-failures` is intentionally expected to exit with code 1. Run it separately from the normal suite. Stress and spike may also exit with code 1 when their performance thresholds are crossed. Do not run k6 against a public host without permission from its operator.
+## Main topic: performance
+
+| ID | Scenario | What to compare | Expected interpretation |
+| --- | --- | --- | --- |
+| P01 | Load, 5 VUs | Overall p95, errors, throughput | Reference baseline for the same machine and endpoint. |
+| P02 | Stress, ramp 5/12/24/40 VUs | Per-ramp p95 and failures, active jobs, 503s | Identify the first stage where degradation appears; record whether the 24-job cap was reached. |
+| P03 | Stress ramp-down | Peak vs ramp-down p95/failures | Check whether the service returns toward baseline after load falls. |
+| P04 | Spike, 5 to 45 VUs in 1 s | Baseline, burst and recovery p95/failures | Sudden demand may trigger 503; recovery should improve after the burst. |
+| P05 | Soak, 10 VUs held for 90 s | Early vs late p95/failures and average actual Node heap | Look for sustained degradation; a single short run cannot establish a memory leak. |
+| P06 | Bad input / guardrails | `work=0`, `work=101`, missing k6, unavailable server or unauthorized remote URL | Clear validation or setup message; no accidental remote load. |
+
+`npm run perf:spike` can return exit code 1 when an error threshold is breached. That is the expected *test verdict* under sufficient load; exact measurements depend on CPU, background processes and runtime. Do not claim a universal breaking point from one laptop. `npm run test:demo-failures` also exits nonzero by design.

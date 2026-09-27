@@ -1,155 +1,160 @@
 import express from "express";
+import { pbkdf2, randomUUID } from "node:crypto";
+import { promisify } from "node:util";
+import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
-import { calculateStats, generateTestIdeas, validateTask } from "./domain/task-rules.js";
-import { createTaskStore } from "./store.js";
+import { evaluateThresholds, percentile } from "../public/shared/evaluation.js";
+import { validatePlan } from "../public/shared/plan-rules.js";
+import { perfScenarios } from "./domain/perf-scenarios.js";
 
+const deriveKey = promisify(pbkdf2);
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.resolve(currentDir, "../public");
+const iconsDir = path.resolve(currentDir, "../node_modules/lucide-static/icons");
+const maxInflight = Math.max(1, Math.min(64, Number(process.env.PERF_MAX_INFLIGHT) || 24));
 
-function parseFaults(request) {
-  return new Set(
-    String(request.header("x-demo-faults") ?? "")
-      .split(",")
-      .map((value) => value.trim())
-      .filter(Boolean),
-  );
-}
+function createTelemetry() {
+  const durations = [];
+  const startedAt = Date.now();
+  let active = 0;
+  let peakActive = 0;
+  let completed = 0;
+  let rejected = 0;
 
-function filterTasks(tasks, query) {
-  const search = String(query.search ?? "").trim().toLowerCase();
-  return tasks.filter((task) => {
-    const matchesSearch = !search || `${task.title} ${task.ownerEmail}`.toLowerCase().includes(search);
-    const matchesStatus = !query.status || task.status === query.status;
-    const matchesPriority = !query.priority || task.priority === query.priority;
-    return matchesSearch && matchesStatus && matchesPriority;
-  });
+  return {
+    get active() { return active; },
+    get limit() { return maxInflight; },
+    begin() {
+      active += 1;
+      peakActive = Math.max(peakActive, active);
+      return performance.now();
+    },
+    finish(started) {
+      active -= 1;
+      completed += 1;
+      durations.push(performance.now() - started);
+      if (durations.length > 1000) durations.shift();
+    },
+    reject() { rejected += 1; },
+    snapshot() {
+      return {
+        active,
+        peakActive,
+        completed,
+        rejected,
+        capacity: maxInflight,
+        p50Ms: percentile(durations, 50),
+        p95Ms: percentile(durations, 95),
+        sampleCount: durations.length,
+        heapUsedMb: Math.round((process.memoryUsage().heapUsed / 1048576) * 10) / 10,
+        uptimeSeconds: Math.round((Date.now() - startedAt) / 1000),
+      };
+    },
+  };
 }
 
 export function createApp() {
   const app = express();
-  const sessions = new Map();
-  let activePerformanceRequests = 0;
-  let soakCounter = 0;
+  const telemetry = createTelemetry();
+  const plans = new Map();
+  const publicWorkLimit = process.env.NODE_ENV === "production" ? 2 : Infinity;
+  let publicWindowStart = Date.now();
+  let publicWindowCount = 0;
 
   app.disable("x-powered-by");
-  app.use(express.json({ limit: "64kb" }));
+  app.use(express.json({ limit: "16kb" }));
   app.use((request, response, next) => {
-    response.setHeader("Cache-Control", "no-store");
+    if (request.path.startsWith("/api/")) response.setHeader("Cache-Control", "no-store");
+    response.setHeader("X-Content-Type-Options", "nosniff");
     next();
   });
 
   app.get("/api/health", (_request, response) => {
-    response.json({ status: "ready", service: "qa-playground" });
+    response.json({ status: "ready", service: "qa-lab" });
   });
 
-  app.post("/api/auth/login", (request, response) => {
-    const email = String(request.body?.email ?? "").trim().toLowerCase();
-    const password = String(request.body?.password ?? "");
+  app.get("/api/perf/scenarios", (_request, response) => {
+    response.json({ scenarios: perfScenarios, target: "/api/perf/work", localOnlyByDefault: true });
+  });
 
-    if (email === "locked@example.com") {
-      return response.status(423).json({ error: "account_locked", message: "This demo account is locked." });
+  app.get("/api/perf/metrics", (_request, response) => {
+    response.json(telemetry.snapshot());
+  });
+
+  app.get("/api/perf/work", async (request, response, next) => {
+    const rawWork = String(request.query.work ?? "30");
+    if (!/^\d{1,3}$/.test(rawWork) || Number(rawWork) < 1 || Number(rawWork) > 100) {
+      return response.status(400).json({ error: "invalid_work", message: "work must be an integer from 1 to 100." });
     }
-    if (email !== "qa@example.com" || password !== "Test123!") {
-      return response.status(401).json({ error: "invalid_credentials", message: "Email or password is incorrect." });
+    const now = Date.now();
+    if (now - publicWindowStart >= 1000) {
+      publicWindowStart = now;
+      publicWindowCount = 0;
     }
-    const token = randomUUID();
-    sessions.set(token, createTaskStore());
-    return response.json({ token, user: { name: "QA Student", email } });
-  });
-
-  app.use("/api/tasks", (request, response, next) => {
-    const token = request.header("authorization")?.replace(/^Bearer /, "");
-    if (!token || !sessions.has(token)) {
-      return response.status(401).json({ error: "unauthorized", message: "A valid demo token is required." });
+    if (publicWindowCount >= publicWorkLimit) {
+      response.setHeader("Retry-After", "1");
+      return response.status(429).json({ error: "public_rate_limit", message: "Public demo allows two work requests per second." });
     }
-    request.taskStore = sessions.get(token);
-    return next();
-  });
-
-  app.get("/api/tasks", (request, response) => {
-    const faults = parseFaults(request);
-    if (faults.has("api-error")) {
-      return response.status(503).json({ error: "service_unavailable", message: "Injected API failure." });
+    publicWindowCount += 1;
+    if (telemetry.active >= telemetry.limit) {
+      telemetry.reject();
+      response.setHeader("Retry-After", "1");
+      return response.status(503).json({ error: "capacity_reached", message: "The work queue is full." });
     }
 
-    const send = () => {
-      const tasks = filterTasks(request.taskStore.list(), request.query);
-      response.json({ tasks, stats: calculateStats(tasks) });
-    };
-
-    if (faults.has("api-delay")) return setTimeout(send, 1200);
-    return send();
-  });
-
-  app.post("/api/tasks", (request, response) => {
-    const faults = parseFaults(request);
-    const validation = validateTask(request.body);
-    if (!validation.valid && !faults.has("validation-bypass")) {
-      return response.status(400).json({ error: "validation_failed", fields: validation.errors });
+    const work = Number(rawWork);
+    const started = telemetry.begin();
+    try {
+      const digest = await deriveKey("qa-lab-workload", "classroom-salt", work * 1000, 32, "sha256");
+      const serviceMs = Math.round((performance.now() - started) * 100) / 100;
+      return response.json({
+        ok: true,
+        iterations: work * 1000,
+        digestPrefix: digest.toString("hex").slice(0, 12),
+        serviceMs,
+        activeJobs: telemetry.active,
+        heapUsedMb: Math.round((process.memoryUsage().heapUsed / 1048576) * 10) / 10,
+      });
+    } catch (error) {
+      return next(error);
+    } finally {
+      telemetry.finish(started);
     }
-    const task = faults.has("validation-bypass") ? request.body : validation.value;
-    return response.status(201).json({ task: request.taskStore.create(task) });
   });
 
-  app.put("/api/tasks/:id", (request, response) => {
-    const validation = validateTask(request.body);
-    if (!validation.valid) {
-      return response.status(400).json({ error: "validation_failed", fields: validation.errors });
-    }
-    const task = request.taskStore.update(request.params.id, validation.value);
-    if (!task) return response.status(404).json({ error: "not_found" });
-    return response.json({ task });
-  });
-
-  app.delete("/api/tasks/:id", (request, response) => {
-    if (!request.taskStore.remove(request.params.id)) return response.status(404).json({ error: "not_found" });
-    return response.status(204).end();
-  });
-
-  app.post("/api/test-ideas", (request, response) => {
-    const result = generateTestIdeas(request.body?.requirement);
-    if (!result.valid) return response.status(400).json({ error: "validation_failed", message: result.error });
+  app.post("/api/evaluate", (request, response) => {
+    const result = evaluateThresholds(request.body);
+    if (!result.valid) return response.status(400).json({ error: "invalid_metrics", fields: result.errors });
     return response.json(result);
   });
 
-  app.get("/api/performance", (request, response) => {
-    const profile = String(request.query.profile ?? "load");
-    const work = Number(request.query.work ?? 0);
-    if (!["load", "stress", "spike", "soak"].includes(profile) || !Number.isFinite(work) || work < 0 || work > 1000) {
-      return response.status(400).json({ error: "invalid_performance_profile" });
-    }
-    activePerformanceRequests += 1;
-    const pressure = Math.max(0, activePerformanceRequests - 8);
-    if (profile === "soak") soakCounter += 0.08;
-
-    let delayMs = 18 + work;
-    if (profile === "stress") delayMs += Math.pow(pressure, 1.45) * 5;
-    if (profile === "spike") delayMs += Math.pow(pressure, 1.6) * 7;
-    if (profile === "soak") delayMs += Math.min(soakCounter, 80);
-    const shouldFail =
-      (profile === "stress" && activePerformanceRequests > 24 && activePerformanceRequests % 5 === 0) ||
-      (profile === "spike" && activePerformanceRequests > 18 && activePerformanceRequests % 4 === 0);
-
-    setTimeout(() => {
-      const observedActive = activePerformanceRequests;
-      activePerformanceRequests -= 1;
-      response.status(shouldFail ? 503 : 200).json({
-        ok: !shouldFail,
-        profile,
-        activeRequests: observedActive,
-        simulatedMemoryMb: Number((84 + soakCounter).toFixed(2)),
-      });
-    }, Math.round(delayMs));
+  app.post("/api/plans", (request, response) => {
+    const result = validatePlan(request.body);
+    if (!result.valid) return response.status(400).json({ error: "invalid_plan", fields: result.errors });
+    const plan = { id: randomUUID(), ...result.value, createdAt: new Date().toISOString() };
+    plans.set(plan.id, plan);
+    if (plans.size > 100) plans.delete(plans.keys().next().value);
+    return response.status(201).json({ plan });
   });
 
-  app.post("/api/test/reset", (request, response) => {
-    const token = request.header("authorization")?.replace(/^Bearer /, "");
-    if (!token || !sessions.has(token)) return response.status(401).json({ error: "unauthorized" });
-    sessions.get(token).reset();
-    soakCounter = 0;
-    response.json({ status: "reset" });
+  app.get("/api/plans/:id", (request, response) => {
+    const plan = plans.get(request.params.id);
+    if (!plan) return response.status(404).json({ error: "plan_not_found" });
+    return response.json({ plan });
+  });
+
+  app.get("/api/cases", (_request, response) => {
+    response.json({ cases: [
+      { id: "UNIT-01", topic: "unit", expected: "Valid metrics are classified by both thresholds." },
+      { id: "API-01", topic: "api", expected: "Malformed metrics return HTTP 400." },
+      { id: "E2E-01", topic: "e2e", expected: "A reviewed test plan can be saved and retrieved." },
+      { id: "MOB-01", topic: "mobile", expected: "No page-level horizontal overflow at mobile width." },
+      { id: "VIS-01", topic: "visual", expected: "The baseline specimen matches its screenshot." },
+      { id: "PERF-01", topic: "performance", expected: "Measure p95, errors and throughput during load." },
+      { id: "AI-01", topic: "ai", expected: "Generated test code is reviewed and run before acceptance." },
+      { id: "CI-01", topic: "ci", expected: "A push runs unit, API and browser checks." },
+    ] });
   });
 
   app.use("/api", (_request, response) => response.status(404).json({ error: "not_found" }));
@@ -160,13 +165,9 @@ export function createApp() {
     return next(error);
   });
 
-  app.use(express.static(publicDir));
+  app.use("/icons", express.static(iconsDir, { maxAge: "1d" }));
+  app.use(express.static(publicDir, { maxAge: "5m" }));
   app.get("/{*path}", (_request, response) => response.sendFile(path.join(publicDir, "index.html")));
 
   return app;
 }
-
-export const credentials = {
-  email: "qa@example.com",
-  password: "Test123!",
-};
