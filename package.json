@@ -1,0 +1,31 @@
+{
+  "name": "qa-playground",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A shareable full-stack playground for demonstrating common software testing topics.",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "test": "npm run test:unit && npm run test:api",
+    "test:unit": "vitest run tests/unit",
+    "test:api": "vitest run tests/api",
+    "test:e2e": "playwright test --grep-invert @demo-fail",
+    "test:visual": "playwright test tests/e2e/visual.spec.js",
+    "test:demo-failures": "playwright test --grep @demo-fail",
+    "test:all": "npm run test && npm run test:e2e",
+    "report": "playwright show-report"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "supertest": "^7.1.4",
+    "vitest": "^3.2.4"
+  }
+}

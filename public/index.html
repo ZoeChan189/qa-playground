@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#155e75" />
+    <title>QA Playground</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <div id="toast-region" class="toast-region" aria-live="polite"></div>
+
+    <main id="login-view" class="login-layout">
+      <section class="login-panel" aria-labelledby="login-title">
+        <div class="brand-lockup">
+          <div class="brand-mark" aria-hidden="true">QA</div>
+          <div>
+            <p class="brand-name">QA Playground</p>
+            <p class="brand-meta">Test target workspace</p>
+          </div>
+        </div>
+
+        <form id="login-form" data-testid="login-form" novalidate>
+          <div class="section-heading">
+            <p class="eyebrow">Demo workspace</p>
+            <h1 id="login-title">Sign in</h1>
+          </div>
+
+          <label class="field">
+            <span>Email</span>
+            <input id="login-email" name="email" type="email" autocomplete="username" required />
+          </label>
+          <label class="field">
+            <span>Password</span>
+            <input id="login-password" name="password" type="password" autocomplete="current-password" required />
+          </label>
+          <p id="login-error" class="form-error" role="alert"></p>
+
+          <button class="button primary full-width" type="submit">Sign in</button>
+          <div class="button-row login-actions">
+            <button id="fill-demo" class="button secondary" type="button">Fill demo account</button>
+            <button id="fill-locked" class="button text-button" type="button">Use locked account</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="login-visual" aria-label="Workspace status">
+        <div class="signal-board">
+          <div class="signal-header">
+            <span>Test surface</span>
+            <span class="status-badge"><i></i> Ready</span>
+          </div>
+          <div class="signal-row"><span>Web UI</span><strong>Responsive</strong></div>
+          <div class="signal-row"><span>REST API</span><strong>/api</strong></div>
+          <div class="signal-row"><span>Fault profiles</span><strong>5</strong></div>
+          <div class="signal-row"><span>Seed tasks</span><strong>3</strong></div>
+          <div class="signal-bars" aria-hidden="true">
+            <span style="height: 32%"></span><span style="height: 48%"></span><span style="height: 68%"></span>
+            <span style="height: 54%"></span><span style="height: 82%"></span><span style="height: 64%"></span>
+            <span style="height: 91%"></span><span style="height: 72%"></span><span style="height: 58%"></span>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <div id="app-view" class="app-shell" hidden>
+      <header class="topbar">
+        <div class="brand-lockup compact">
+          <div class="brand-mark" aria-hidden="true">QA</div>
+          <div>
+            <p class="brand-name">QA Playground</p>
+            <p class="brand-meta">Task operations</p>
+          </div>
+        </div>
+        <div class="topbar-actions">
+          <span id="api-status" class="status-badge"><i></i> API online</span>
+          <span id="fault-count" class="fault-count">0 faults</span>
+          <button id="logout-button" class="button secondary" type="button">Sign out</button>
+        </div>
+      </header>
+
+      <nav class="tabs" aria-label="Workspace views">
+        <button class="tab active" data-view="tasks" type="button">Tasks</button>
+        <button class="tab" data-view="api" type="button">API Console</button>
+        <button class="tab" data-view="faults" type="button">Fault Lab</button>
+        <button class="tab" data-view="ideas" type="button">Test Ideas</button>
+      </nav>
+
+      <main class="workspace">
+        <section id="view-tasks" class="view-panel active" data-testid="tasks-view">
+          <div class="workspace-header">
+            <div>
+              <p class="eyebrow">Delivery board</p>
+              <h1>Task operations</h1>
+            </div>
+            <div class="button-row"><button id="reset-data-button" class="button secondary" type="button">Reset data</button><button id="new-task-button" class="button primary" type="button">New task</button></div>
+          </div>
+
+          <div class="stats-strip" aria-label="Task statistics">
+            <div><span>Total</span><strong id="stat-total">0</strong></div>
+            <div><span>To do</span><strong id="stat-todo">0</strong></div>
+            <div><span>In progress</span><strong id="stat-progress">0</strong></div>
+            <div><span>Done</span><strong id="stat-done">0</strong></div>
+            <div class="risk-stat"><span>High risk</span><strong id="stat-risk">0</strong></div>
+          </div>
+
+          <div class="toolbar">
+            <label class="search-field">
+              <span class="sr-only">Search tasks</span>
+              <input id="task-search" type="search" placeholder="Search title or owner" />
+            </label>
+            <label>
+              <span class="sr-only">Filter status</span>
+              <select id="status-filter">
+                <option value="">All statuses</option>
+                <option value="todo">To do</option>
+                <option value="in-progress">In progress</option>
+                <option value="done">Done</option>
+              </select>
+            </label>
+            <label>
+              <span class="sr-only">Filter priority</span>
+              <select id="priority-filter">
+                <option value="">All priorities</option>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+            </label>
+            <span id="response-time" class="response-time">0 ms</span>
+          </div>
+
+          <div class="table-frame">
+            <table>
+              <thead>
+                <tr><th>Task</th><th>Owner</th><th>Priority</th><th>Status</th><th>Due</th><th aria-label="Actions"></th></tr>
+              </thead>
+              <tbody id="task-rows"></tbody>
+            </table>
+            <div id="empty-state" class="empty-state" hidden>No tasks match the current filters.</div>
+          </div>
+        </section>
+
+        <section id="view-api" class="view-panel" data-testid="api-view">
+          <div class="workspace-header">
+            <div><p class="eyebrow">Request workbench</p><h1>API Console</h1></div>
+            <button id="send-request" class="button primary" type="button">Send request</button>
+          </div>
+          <div class="api-grid">
+            <div class="api-controls">
+              <label class="field">
+                <span>Endpoint</span>
+                <select id="api-endpoint">
+                  <option value="health">GET /api/health</option>
+                  <option value="tasks">GET /api/tasks</option>
+                  <option value="ideas">POST /api/test-ideas</option>
+                  <option value="performance">GET /api/performance?profile=load</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Request body</span>
+                <textarea id="api-body" rows="9" spellcheck="false">{
+  "requirement": "A user can create a high-priority task"
+}</textarea>
+              </label>
+            </div>
+            <div class="response-pane">
+              <div class="response-meta"><strong id="api-result-status">Not sent</strong><span id="api-result-time">0 ms</span></div>
+              <pre id="api-response" tabindex="0">Select an endpoint and send a request.</pre>
+            </div>
+          </div>
+        </section>
+
+        <section id="view-faults" class="view-panel" data-testid="faults-view">
+          <div class="workspace-header">
+            <div><p class="eyebrow">Controlled failures</p><h1>Fault Lab</h1></div>
+            <button id="reset-faults" class="button secondary" type="button">Reset faults</button>
+          </div>
+          <div class="fault-list">
+            <label class="fault-row"><span><strong>Validation bypass</strong><small>Invalid task data is accepted by POST /api/tasks.</small></span><input type="checkbox" value="validation-bypass" /></label>
+            <label class="fault-row"><span><strong>Slow API</strong><small>Task requests wait 1.2 seconds before responding.</small></span><input type="checkbox" value="api-delay" /></label>
+            <label class="fault-row"><span><strong>API unavailable</strong><small>GET /api/tasks returns HTTP 503.</small></span><input type="checkbox" value="api-error" /></label>
+            <label class="fault-row"><span><strong>Visual shift</strong><small>Header alignment and primary color change.</small></span><input type="checkbox" value="visual-shift" /></label>
+            <label class="fault-row"><span><strong>Mobile overflow</strong><small>The app becomes wider than a mobile viewport.</small></span><input type="checkbox" value="mobile-overflow" /></label>
+          </div>
+        </section>
+
+        <section id="view-ideas" class="view-panel" data-testid="ideas-view">
+          <div class="workspace-header">
+            <div><p class="eyebrow">Review assistant</p><h1>Test Ideas</h1></div>
+            <div class="button-row"><button id="copy-ai-prompt" class="button secondary" type="button">Copy AI prompt</button><button id="generate-ideas" class="button primary" type="button">Generate checklist</button></div>
+          </div>
+          <label class="field requirement-field">
+            <span>Requirement</span>
+            <textarea id="requirement-input" rows="5">A signed-in user can create a task with a title, owner, priority, status and due date.</textarea>
+          </label>
+          <label class="field prompt-field"><span>Prompt for an AI coding assistant</span><textarea id="ai-prompt" rows="8" readonly></textarea></label>
+          <div id="idea-results" class="idea-results" aria-live="polite"></div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="task-dialog">
+      <form id="task-form" method="dialog" novalidate>
+        <div class="dialog-header">
+          <div><p class="eyebrow">Task record</p><h2 id="task-dialog-title">New task</h2></div>
+          <button id="close-task-dialog" class="icon-button" type="button" title="Close" aria-label="Close task form">×</button>
+        </div>
+        <input id="task-id" type="hidden" />
+        <label class="field"><span>Title</span><input id="task-title" name="title" aria-label="Title" aria-describedby="task-title-error" maxlength="80" required /><small id="task-title-error" data-error="title"></small></label>
+        <label class="field"><span>Owner email</span><input id="task-owner" name="ownerEmail" type="email" aria-label="Owner email" aria-describedby="task-owner-error" required /><small id="task-owner-error" data-error="ownerEmail"></small></label>
+        <div class="form-grid">
+          <label class="field"><span>Priority</span><select id="task-priority" name="priority"><option>low</option><option selected>medium</option><option>high</option></select></label>
+          <label class="field"><span>Status</span><select id="task-status" name="status"><option value="todo">todo</option><option value="in-progress">in-progress</option><option value="done">done</option></select></label>
+        </div>
+        <label class="field"><span>Due date</span><input id="task-due" name="dueDate" type="date" aria-label="Due date" aria-describedby="task-due-error" required /><small id="task-due-error" data-error="dueDate"></small></label>
+        <p id="task-form-error" class="form-error" role="alert"></p>
+        <div class="dialog-actions"><button id="cancel-task" class="button secondary" type="button">Cancel</button><button class="button primary" type="submit">Save task</button></div>
+      </form>
+    </dialog>
+  </body>
+</html>
