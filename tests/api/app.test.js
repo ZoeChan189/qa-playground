@@ -1,9 +1,10 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import { createApp } from "../../src/app.js";
 
 let app;
 beforeEach(() => { app = createApp(); });
+afterEach(() => vi.unstubAllEnvs());
 
 describe("QA Lab API", () => {
   it("exposes health, all four profiles and the case catalog", async () => {
@@ -82,5 +83,67 @@ describe("QA Lab API", () => {
     const malformed = await request(app).post("/api/evaluate").set("Content-Type", "application/json").send("{broken");
     expect(malformed.status).toBe(400);
     expect(malformed.body.error).toBe("invalid_json");
+  });
+
+  it("keeps AI disabled without a key or a production access code", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "");
+    vi.stubEnv("NODE_ENV", "production");
+    let aiApp = createApp();
+    expect((await request(aiApp).get("/api/ai/status")).body).toMatchObject({ available: false, reason: "missing_key" });
+    expect((await request(aiApp).post("/api/ai/generate").send({ topic: "unit", requirement: "A valid metric passes." })).status).toBe(503);
+
+    vi.stubEnv("GEMINI_API_KEY", "test-key-not-real");
+    vi.stubEnv("AI_DEMO_ACCESS_CODE", "");
+    aiApp = createApp();
+    expect((await request(aiApp).get("/api/ai/status")).body).toMatchObject({ available: false, reason: "missing_access_code" });
+    vi.stubEnv("NODE_ENV", "development");
+    expect((await request(createApp()).get("/api/ai/status")).body.available).toBe(false);
+  });
+
+  it("validates and protects a successful Gemini request", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("GEMINI_API_KEY", "test-key-not-real");
+    vi.stubEnv("AI_DEMO_ACCESS_CODE", "classroom-demo-code");
+    const aiFetch = vi.fn(async (_url, options) => {
+      expect(options.headers["x-goog-api-key"]).toBe("test-key-not-real");
+      const sent = JSON.parse(options.body);
+      expect(sent.store).toBe(false);
+      expect(sent.model).toBe("gemini-3.5-flash-lite");
+      expect(sent.input).toContain("equality fails");
+      expect(options.body).not.toContain("classroom-demo-code");
+      return new Response(JSON.stringify({ steps: [{ type: "model_output", content: [{ type: "text", text: "U01: equality fails" }] }] }), { status: 200 });
+    });
+    const aiApp = createApp({ aiFetch });
+    expect((await request(aiApp).get("/api/ai/status")).body).toMatchObject({ available: true, requiresCode: true });
+    const body = { topic: "unit", requirement: "Check a threshold boundary at equality.", accessCode: "classroom-demo-code" };
+    expect((await request(aiApp).post("/api/ai/generate").send({ ...body, topic: "unknown" })).status).toBe(400);
+    expect((await request(aiApp).post("/api/ai/generate").send({ ...body, requirement: "short" })).status).toBe(400);
+    expect((await request(aiApp).post("/api/ai/generate").send({ ...body, accessCode: "wrong" })).status).toBe(403);
+    expect(aiFetch).not.toHaveBeenCalled();
+    const result = await request(aiApp).post("/api/ai/generate").send(body);
+    expect(result.status).toBe(200);
+    expect(result.body).toEqual({ text: "U01: equality fails", model: "gemini-3.5-flash-lite" });
+    expect(JSON.stringify(result.body)).not.toContain("test-key-not-real");
+    expect(aiFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not leak provider errors and limits AI requests", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("GEMINI_API_KEY", "test-key-not-real");
+    vi.stubEnv("AI_DEMO_ACCESS_CODE", "classroom-demo-code");
+    const body = { topic: "performance", requirement: "Check spike recovery after 45 VUs.", accessCode: "classroom-demo-code" };
+    const failed = createApp({ aiFetch: async () => new Response("private upstream detail", { status: 429 }) });
+    const quota = await request(failed).post("/api/ai/generate").send(body);
+    expect(quota.status).toBe(503);
+    expect(quota.body.error).toBe("ai_quota");
+    expect(JSON.stringify(quota.body)).not.toContain("private upstream detail");
+
+    const aiApp = createApp({ aiFetch: async () => new Response(JSON.stringify({ steps: [{ type: "model_output", content: [{ type: "text", text: "Draft" }] }] }), { status: 200 }) });
+    for (let index = 0; index < 20; index += 1) {
+      expect((await request(aiApp).post("/api/ai/generate").send(body)).status).toBe(200);
+    }
+    const limited = await request(aiApp).post("/api/ai/generate").send(body);
+    expect(limited.status).toBe(429);
+    expect(Number(limited.headers["retry-after"])).toBeGreaterThan(0);
   });
 });

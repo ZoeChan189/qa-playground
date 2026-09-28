@@ -7,6 +7,7 @@ import path from "node:path";
 import { evaluateThresholds, percentile } from "../public/shared/evaluation.js";
 import { validatePlan } from "../public/shared/plan-rules.js";
 import { perfScenarios } from "./domain/perf-scenarios.js";
+import { aiTopics, generateAiCases } from "./domain/ai-assistant.js";
 
 const deriveKey = promisify(pbkdf2);
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
@@ -54,10 +55,17 @@ function createTelemetry() {
   };
 }
 
-export function createApp() {
+export function createApp({ aiFetch = fetch } = {}) {
   const app = express();
   const telemetry = createTelemetry();
   const plans = new Map();
+  const aiKey = process.env.GEMINI_API_KEY?.trim() || "";
+  const aiAccessCode = process.env.AI_DEMO_ACCESS_CODE?.trim() || "";
+  const aiModel = process.env.GEMINI_MODEL?.trim() || "gemini-3.5-flash-lite";
+  const aiAvailable = Boolean(aiKey && aiAccessCode);
+  let aiWindowStart = Date.now();
+  let aiWindowCount = 0;
+  let aiInflight = 0;
   const publicWorkLimit = process.env.NODE_ENV === "production" ? 2 : Infinity;
   let publicWindowStart = Date.now();
   let publicWindowCount = 0;
@@ -155,6 +163,44 @@ export function createApp() {
       { id: "AI-01", topic: "ai", expected: "Generated test code is reviewed and run before acceptance." },
       { id: "CI-01", topic: "ci", expected: "A push runs unit, API and browser checks." },
     ] });
+  });
+
+  app.get("/api/ai/status", (_request, response) => {
+    response.json({
+      available: aiAvailable,
+      requiresCode: Boolean(aiAccessCode),
+      reason: !aiKey ? "missing_key" : !aiAccessCode ? "missing_access_code" : null,
+      model: aiAvailable ? aiModel : null,
+    });
+  });
+
+  app.post("/api/ai/generate", async (request, response) => {
+    if (!aiAvailable) return response.status(503).json({ error: "ai_not_configured", message: "Gemini is not configured on this server." });
+    const { topic, requirement, accessCode } = request.body ?? {};
+    if (!aiTopics.has(topic) || typeof requirement !== "string" || requirement.trim().length < 10 || requirement.trim().length > 500) {
+      return response.status(400).json({ error: "invalid_ai_request", message: "Choose a topic and enter a requirement of 10 to 500 characters." });
+    }
+    if (aiAccessCode && accessCode !== aiAccessCode) {
+      return response.status(403).json({ error: "ai_access_denied", message: "The group access code is incorrect." });
+    }
+    const now = Date.now();
+    if (now - aiWindowStart >= 3_600_000) {
+      aiWindowStart = now;
+      aiWindowCount = 0;
+    }
+    if (aiWindowCount >= 20 || aiInflight >= 2) {
+      response.setHeader("Retry-After", aiWindowCount >= 20 ? String(Math.ceil((3_600_000 - (now - aiWindowStart)) / 1000)) : "10");
+      return response.status(429).json({ error: "ai_rate_limit", message: "AI demo is busy or has reached its hourly limit. Try again later." });
+    }
+    aiWindowCount += 1;
+    aiInflight += 1;
+    try {
+      const result = await generateAiCases({ topic, requirement: requirement.trim(), apiKey: aiKey, model: aiModel, fetchImpl: aiFetch });
+      if (!result.ok) return response.status(result.status).json({ error: result.error, message: result.message });
+      return response.json({ text: result.text, model: result.model });
+    } finally {
+      aiInflight -= 1;
+    }
   });
 
   app.use("/api", (_request, response) => response.status(404).json({ error: "not_found" }));

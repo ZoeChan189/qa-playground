@@ -8,7 +8,7 @@ One small, real web application for SWT301 testing demonstrations. **Performance
 2. Double-click `start-windows.cmd`. It checks Node.js/npm, installs dependencies on first use, reports a missing optional k6 installation, and starts the site.
 3. Open <http://localhost:4173>. Keep the terminal window open while using the site.
 
-If Node.js is missing or older than 20, install [Node.js 20+](https://nodejs.org/en/download), reopen the terminal, and try again. Other desktop platforms can run `npm ci` then `npm start`. A visitor to a hosted copy only needs a browser. No database, account, API key or paid service is required.
+If Node.js is missing or older than 20, install [Node.js 20+](https://nodejs.org/en/download), reopen the terminal, and try again. Other desktop platforms can run `npm ci` then `npm start`. A visitor to a hosted copy only needs a browser. The core lab needs no database, account or paid service; Gemini is optional and requires a server-side API key.
 
 ## What to click
 
@@ -18,7 +18,7 @@ If Node.js is missing or older than 20, install [Node.js 20+](https://nodejs.org
 - **Web E2E:** create, review and save a test plan through the real UI and API.
 - **Mobile web:** use a narrow screen or Playwright's mobile project; check overflow and repeat the plan flow.
 - **Visual:** compare the stable specimen to its screenshot baseline; the shifted variant intentionally fails the image assertion.
-- **AI-assisted:** build a prompt for an external AI tool, review its suggested test, then run it. There is no AI model or paid API behind this page.
+- **AI-assisted:** generate draft test cases through Gemini when configured, or build a prompt for another AI tool. Review the draft and run its proposed test; generation alone is not a pass.
 - **CI/CD:** open GitHub Actions to see automated unit, API, desktop, mobile and visual checks.
 
 See [the case matrix](docs/demo-cases.md) and [the performance guide](docs/performance.md) for class demonstrations and interpretation.
@@ -51,7 +51,9 @@ The target performs real asynchronous PBKDF2 work and caps concurrent jobs at 24
 
 ## Hosting
 
-Use a provider that runs a Node.js service. Set install/build to `npm ci`, start to `npm start`, and expose the assigned `PORT`. Production mode listens on all interfaces; local development listens only on `127.0.0.1` unless `HOST` is set. GitHub Pages or other static-only hosting cannot run this API. With `NODE_ENV=production`, the expensive endpoint admits at most two requests per second per server instance (HTTP 429 after that), so the hosted site is for browsing and light probes. Run substantial k6 traffic against a local copy to avoid shared-server load or fees. There is no authentication. Saved test plans and telemetry are in memory and disappear on restart; do not enter personal data. Multiple server instances do not share plans or metrics.
+Use a provider that runs a Node.js service. Set install/build to `npm ci`, start to `npm start`, and expose the assigned `PORT`. Production mode listens on all interfaces; local development listens only on `127.0.0.1` unless `HOST` is set. GitHub Pages or other static-only hosting cannot run this API. With `NODE_ENV=production`, the expensive endpoint admits at most two requests per second per server instance (HTTP 429 after that), so the hosted site is for browsing and light probes. Run substantial k6 traffic against a local copy to avoid shared-server load or fees. There is no app-wide authentication; the optional AI endpoint requires a group code. Saved test plans and telemetry are in memory and disappear on restart; do not enter personal data. Multiple server instances do not share plans or metrics.
+
+To enable Gemini on Render, set `GEMINI_API_KEY` and a long `AI_DEMO_ACCESS_CODE` under the service's Environment settings, then redeploy. Share only the access code with classmates; never share the Gemini key. The AI endpoint is disabled until both values are present. It allows 20 requests per hour and two concurrent requests per instance, but that is not a billing cap. `GEMINI_MODEL` optionally overrides the default `gemini-3.5-flash-lite`. See [the AI-assisted guide](docs/ai-assisted.md) for use and safety details. Core lab pages work without these variables.
 
 ## Repository map
 

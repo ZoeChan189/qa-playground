@@ -31,6 +31,8 @@ const apiPresets = {
 let scenarios = null;
 let selectedScenario = "stress";
 const heapHistory = [];
+let aiReady = false;
+let aiRequiresCode = false;
 
 function toast(message, error = false) {
   const node = document.createElement("div");
@@ -376,11 +378,64 @@ function setVisualVariant(variant) {
 function buildAiPrompt() {
   const requirement = byId("ai-requirement").value.trim();
   const topic = byId("ai-topic").value;
-  if (requirement.length < 10) {
-    toast("Enter at least 10 characters in the requirement.", true);
-    return;
+  if (requirement.length < 10 || requirement.length > 500) {
+    byId("ai-output").value = "";
+    toast("Enter a requirement of 10 to 500 characters.", true);
+    return false;
   }
   byId("ai-output").value = `You are assisting a SWT301 software testing student. The system under test is QA Lab, a Node.js/Express app. Focus topic: ${topic}.\n\nRequirement: ${requirement}\n\nRead the real source and API contract before writing tests. Propose key happy-path, invalid, boundary and recovery cases. For each case give setup, steps, expected result and the exact assertion. Then draft runnable tests using Vitest, Supertest, Playwright or k6 as appropriate. Do not invent observed results or claim a test passed before executing it. Keep load tests local unless the server owner gives permission. Flag assumptions and review generated code with a human.`;
+  return true;
+}
+
+async function loadAiStatus() {
+  try {
+    const response = await fetch("/api/ai/status");
+    if (!response.ok) throw new Error("AI status unavailable");
+    const status = await response.json();
+    aiReady = status.available;
+    aiRequiresCode = status.requiresCode;
+    byId("ai-access-wrap").hidden = !aiRequiresCode;
+    byId("ai-generate").disabled = !aiReady;
+    byId("ai-status").textContent = aiReady
+      ? `Gemini ready (${status.model}). Up to 20 requests per hour on this server.`
+      : status.reason === "missing_access_code"
+        ? "Gemini needs a group access code configured by the site owner. Prompt builder still works."
+        : "Gemini is not configured on this server. Prompt builder still works.";
+  } catch {
+    byId("ai-generate").disabled = true;
+    byId("ai-status").textContent = "Could not check Gemini status. Prompt builder still works.";
+  }
+}
+
+async function generateAiCases() {
+  if (!aiReady || !buildAiPrompt()) return;
+  const accessCode = byId("ai-access-code").value;
+  if (aiRequiresCode && !accessCode) {
+    byId("ai-status").textContent = "Enter the group access code to generate test cases.";
+    byId("ai-access-code").focus();
+    return;
+  }
+  const button = byId("ai-generate");
+  button.disabled = true;
+  byId("ai-status").textContent = "Generating test cases...";
+  byId("ai-result-wrap").hidden = true;
+  try {
+    const response = await fetch("/api/ai/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ topic: byId("ai-topic").value, requirement: byId("ai-requirement").value.trim(), accessCode }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.message || "Gemini request failed.");
+    byId("ai-result").textContent = result.text;
+    byId("ai-result-wrap").hidden = false;
+    byId("ai-status").textContent = "Draft ready. Check its assertions and run the test before reporting a pass.";
+  } catch (error) {
+    byId("ai-status").textContent = error.message || "Gemini request failed.";
+    toast(byId("ai-status").textContent, true);
+  } finally {
+    button.disabled = !aiReady;
+  }
 }
 
 document.querySelectorAll(".topic-link").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.view)));
@@ -399,12 +454,15 @@ byId("plan-new").addEventListener("click", () => { byId("plan-form").reset(); sh
 byId("mobile-check").addEventListener("click", measureMobile);
 byId("mobile-open-plan").addEventListener("click", () => navigate("e2e"));
 byId("ai-build").addEventListener("click", buildAiPrompt);
-byId("ai-copy").addEventListener("click", () => { buildAiPrompt(); if (byId("ai-output").value) copyText(byId("ai-output").value); });
+byId("ai-copy").addEventListener("click", () => { if (buildAiPrompt()) copyText(byId("ai-output").value); });
+byId("ai-generate").addEventListener("click", generateAiCases);
+byId("ai-copy-result").addEventListener("click", () => copyText(byId("ai-result").textContent));
 window.addEventListener("hashchange", syncRoute);
 window.addEventListener("resize", () => { if (byId("view-mobile").classList.contains("active")) measureMobile(); });
 
 updateApiPreset();
 buildAiPrompt();
+loadAiStatus();
 checkHealth();
 try {
   const response = await fetch("/api/perf/scenarios");

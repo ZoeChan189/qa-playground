@@ -16,7 +16,7 @@ The app is the **system under test**. A displayed case is a test idea; a passing
 | M01 | Mobile web | Open at 412 px and run mobile Playwright project | No page-level horizontal overflow; navigation and plan form remain usable. |
 | V01 | Visual | `npm run test:visual` | Stable specimen matches committed baseline. |
 | V02 | Visual regression | `npm run test:demo-failures` | Shifted specimen fails screenshot comparison intentionally. |
-| AI01 | AI-assisted | Build prompt, ask an external AI to draft a test, inspect and execute it | Human verifies selectors, assertions and actual result; generated prose alone is not a test pass. |
+| AI01 | AI-assisted | Generate with Gemini (or build a prompt when unconfigured), inspect and execute the proposed test | Human verifies selectors, assertions and actual result; generated prose alone is not a test pass. |
 | C01 | CI/CD | Push or open PR | GitHub Actions runs unit, API, browser and visual checks. |
 | C02 | CI reporting | A browser assertion fails | Workflow is red and uploads the Playwright report on failure. |
 

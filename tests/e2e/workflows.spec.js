@@ -92,6 +92,25 @@ test("AI prompt and visual variant are usable", async ({ page }) => {
   await expect(page.locator("#visual-specimen")).not.toHaveClass(/shifted/);
 });
 
+test("AI page sends a protected request and displays the draft as text", async ({ page }) => {
+  let sent;
+  await page.route("**/api/ai/status", (route) => route.fulfill({ json: { available: true, requiresCode: true, model: "gemini-3.5-flash-lite" } }));
+  await page.route("**/api/ai/generate", (route) => {
+    sent = route.request().postDataJSON();
+    return route.fulfill({ json: { text: "AI01: <img src=x onerror=alert(1)> Check boundary", model: "gemini-3.5-flash-lite" } });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "AI-assisted" }).click();
+  await expect(page.locator("#ai-access-wrap")).toBeVisible();
+  await page.locator("#ai-access-code").fill("group-code");
+  await page.getByRole("button", { name: "Generate test cases" }).click();
+  await expect(page.locator("#ai-result")).toContainText("Check boundary");
+  await expect(page.locator("#ai-result img")).toHaveCount(0);
+  const dimensions = await page.evaluate(() => ({ width: document.documentElement.clientWidth, content: document.documentElement.scrollWidth }));
+  expect(dimensions.content).toBeLessThanOrEqual(dimensions.width);
+  expect(sent).toMatchObject({ topic: "performance", accessCode: "group-code" });
+});
+
 test("mobile navigation, plan form and page width remain usable", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "mobile-chromium", "Mobile project only");
   await page.goto("/");
