@@ -96,8 +96,12 @@ code { overflow-wrap: anywhere; }
 .profile-details dl div { display: flex; justify-content: space-between; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 11px; }
 .profile-details dt { color: var(--muted); }
 .profile-details dd { margin: 0; font-weight: 800; text-align: right; }
+.peak-control { display: grid; gap: 5px; margin-top: 13px; color: #485863; font-size: 11px; font-weight: 700; }
+.peak-control input { width: 100%; }
+.peak-control small { min-height: 15px; color: var(--muted); font-size: 10px; font-weight: 400; }
+.peak-control small.error-text { color: var(--coral); }
 .command-block { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding: 6px 6px 6px 10px; border-radius: 5px; background: #17252e; color: white; }
-.command-block code { flex: 1; font-size: 11px; }
+.command-block code { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 11px; }
 .icon-button { display: grid; place-items: center; width: 29px; height: 29px; border: 0; border-radius: 4px; background: #344653; }
 .icon-button img { width: 14px; height: 14px; filter: invert(1); }
 

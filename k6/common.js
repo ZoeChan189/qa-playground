@@ -3,6 +3,7 @@ import { check, sleep } from "k6";
 import exec from "k6/execution";
 import { Gauge, Rate, Trend } from "k6/metrics";
 import { perfScenarios } from "../src/domain/perf-scenarios.js";
+import { scenarioWithPeak } from "../public/shared/perf-profile.js";
 
 const baseUrl = (__ENV.BASE_URL || "http://127.0.0.1:4173").replace(/\/$/, "");
 const localTarget = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/.test(baseUrl);
@@ -12,6 +13,7 @@ if (!localTarget && __ENV.ALLOW_REMOTE_LOAD !== "1") {
 
 const serverHeap = new Gauge("server_heap_used_mb");
 const serverActive = new Gauge("server_active_jobs");
+const configuredPeak = new Gauge("configured_peak_vus");
 const phaseNames = ["baseline", "ramp5", "ramp12", "ramp24", "peak40", "burst", "recovery", "early", "late"];
 const phaseMetrics = Object.fromEntries(phaseNames.map((name) => [name, {
   duration: new Trend(`phase_${name}_duration_ms`, true),
@@ -39,7 +41,8 @@ function currentPhase(profile) {
 }
 
 export function optionsFor(profile) {
-  const config = perfScenarios[profile];
+  const baseConfig = perfScenarios[profile];
+  const config = scenarioWithPeak(profile, baseConfig, __ENV.PERF_PEAK_VUS ? Number(__ENV.PERF_PEAK_VUS) : baseConfig.peakVus);
   const stages = config.stages.map((stage, index) => ({
     duration: profile === "soak" && index === 1 ? (__ENV.SOAK_STEADY || `${stage.seconds}s`) : `${stage.seconds}s`,
     target: stage.vus,
@@ -55,6 +58,7 @@ export function optionsFor(profile) {
 
 export function exercise(profile) {
   const config = perfScenarios[profile];
+  configuredPeak.add(__ENV.PERF_PEAK_VUS ? Number(__ENV.PERF_PEAK_VUS) : config.peakVus);
   const phase = currentPhase(profile);
   const response = http.get(`${baseUrl}/api/perf/work?work=${config.work}`, {
     tags: { profile, phase: phase || "middle" },

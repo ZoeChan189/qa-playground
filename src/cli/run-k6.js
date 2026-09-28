@@ -2,11 +2,22 @@ import { spawn, spawnSync } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { MAX_LOCAL_PEAK_VUS } from "../../public/shared/perf-profile.js";
 
 const profile = process.argv[2];
 if (!["load", "stress", "spike", "soak"].includes(profile)) {
   console.error("Choose load, stress, spike or soak.");
   process.exit(2);
+}
+const extraArgs = process.argv.slice(3);
+let peakVus;
+if (extraArgs.length) {
+  const rawPeak = extraArgs[0] === "--vus" && extraArgs.length === 2 ? extraArgs[1] : "";
+  peakVus = Number(rawPeak);
+  if (!/^\d+$/.test(rawPeak) || !Number.isInteger(peakVus) || peakVus < (profile === "spike" ? 5 : 1) || peakVus > MAX_LOCAL_PEAK_VUS) {
+    console.error(`Use --vus N with ${profile === "spike" ? "5" : "1"} to ${MAX_LOCAL_PEAK_VUS} local virtual users.`);
+    process.exit(2);
+  }
 }
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -37,11 +48,11 @@ const resultsDir = path.join(root, "results");
 await mkdir(resultsDir, { recursive: true });
 const filename = `${profile}-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
 const output = path.join(resultsDir, filename);
-console.log(`Running ${profile} against ${baseUrl}`);
+console.log(`Running ${profile}${peakVus ? ` at ${peakVus} peak VUs` : ""} against ${baseUrl}`);
 console.log(`Summary: ${output}`);
 const child = spawn(bin, ["run", "--quiet", "--summary-export", output, path.join(root, "k6", `${profile}.js`)], {
   cwd: root,
-  env: { ...process.env, BASE_URL: baseUrl },
+  env: { ...process.env, BASE_URL: baseUrl, PERF_PEAK_VUS: peakVus ? String(peakVus) : "" },
   stdio: "inherit",
   windowsHide: true,
 });

@@ -8,6 +8,11 @@ test("performance workspace shows profiles, real telemetry and a safe probe", as
   await page.getByRole("button", { name: "Spike", exact: true }).click();
   await expect(page.locator("#profile-name")).toHaveText("Spike");
   await expect(page.locator("#perf-command")).toHaveText("npm run perf:spike");
+  await page.locator("#perf-vus").fill("120");
+  await expect(page.locator("#perf-command")).toHaveText("npm run perf:spike -- --vus 120");
+  await expect(page.locator("#profile-vus")).toHaveText("120 VUs");
+  await page.locator("#perf-vus").fill("201");
+  await expect(page.locator("#copy-perf-command")).toBeDisabled();
   await page.getByRole("button", { name: "Soak", exact: true }).click();
   await expect(page.locator("#profile-name")).toHaveText("Soak");
   await page.getByRole("button", { name: "Run probe" }).click();
@@ -18,6 +23,7 @@ test("k6 summary import reads flat metrics and phase comparison", async ({ page 
   await page.goto("/");
   await expect(page.locator("#summary-file")).toBeEnabled();
   const summary = { metrics: {
+    configured_peak_vus: { value: 120 },
     http_req_duration: { "p(95)": 94.25 },
     http_req_failed: { value: 0.2174 },
     http_reqs: { count: 3937 },
@@ -35,7 +41,11 @@ test("k6 summary import reads flat metrics and phase comparison", async ({ page 
   });
   await expect(page.locator("#summary-requests")).toHaveText("3,937");
   await expect(page.locator("#profile-name")).toHaveText("Spike");
+  await expect(page.locator("#profile-vus")).toHaveText("120 VUs");
+  await expect(page.locator("#perf-command")).toHaveText("npm run perf:spike -- --vus 120");
   await expect(page.locator("#summary-verdict")).toHaveText("LIMIT BREACHED");
+  await expect(page.locator("#summary-message")).toContainText("p95 PASS");
+  await expect(page.locator("#summary-message")).toContainText("Errors FAIL");
   await expect(page.locator("#phase-rows tr")).toHaveCount(3);
   await expect(page.locator("#phase-rows")).toContainText("25.4%");
   await page.locator("#summary-file").setInputFiles({

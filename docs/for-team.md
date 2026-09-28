@@ -41,6 +41,12 @@ nếu bạn chưa quen giao diện.
 
 Thích gõ lệnh hơn thì mở Command Prompt thứ hai trong thư mục dự án và chạy
 lần lượt `npm run perf:stress`, `npm run perf:spike`, `npm run perf:soak`.
+Muốn đổi mức người dùng ảo, nhập **Local peak VUs** trên trang Performance rồi
+chép lệnh được tạo, ví dụ `npm run perf:stress -- --vus 100`. Chạy lệnh này
+trong thư mục dự án trên máy mình. Giới hạn thực hành là 200 VU; đây không phải
+nút chạy test trên trình duyệt. Nếu p95 vẫn thấp nhưng Error rate vượt ngưỡng,
+kết quả tổng thể vẫn là **FAIL**. API nhận tối đa 24 job cùng lúc, nên tải cao
+có thể sinh HTTP 503 rất nhanh thay vì làm p95 tăng lên 900 ms.
 
 **Đừng nhầm:** chọn tab Stress/Spike/Soak chỉ xem kế hoạch; **Run probe** chỉ
 gửi một request; **Open summary** chỉ đọc file JSON. Lệnh k6 trong terminal

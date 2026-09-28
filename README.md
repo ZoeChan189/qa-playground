@@ -48,6 +48,8 @@ npm run perf:spike
 npm run perf:soak
 ```
 
+For a larger **local-only** run, change **Local peak VUs** on the Performance page and copy its command, for example `npm run perf:stress -- --vus 120`. The supported range is 1–200 VUs (5–200 for Spike). The chart updates to the selected profile; the web page itself never starts k6. Run one scenario at a time and watch your computer's CPU. More VUs do not guarantee a high p95: the 24-job admission cap can return fast HTTP 503s, making the **error-rate** threshold fail while latency remains below its limit. Import the generated JSON to see the separate p95 and error verdicts.
+
 The wrapper checks k6 and the target before starting, and saves a JSON summary to `results/`. If k6 is installed as a portable executable, set `K6_BIN` to its full path. A crossed threshold makes k6 exit nonzero; this is test evidence, not necessarily a broken script. The default target is `127.0.0.1:4173`. Remote load is blocked unless the operator explicitly allows it with `ALLOW_REMOTE_LOAD=1`. **Do not stress-test a public/shared host without permission.** Local runs avoid hosting cost; CI never runs the load scripts.
 
 The target performs real asynchronous PBKDF2 work and caps concurrent jobs at 24, returning HTTP 503 above capacity. k6 records real response times, error rates, request counts and phase comparisons. The API reports actual Node heap usage, not a simulated memory value. An overall threshold can pass even when some requests fail; inspect the phase table too. These short, single-machine tests illustrate methods, not production capacity. See [performance methodology and caveats](docs/performance.md).

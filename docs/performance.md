@@ -15,6 +15,8 @@ No Grafana account or server is necessary for the exercise. Run k6 locally and i
 3. In a second terminal, run `npm run perf:load`, then stress, spike and soak **one at a time**. Do not run them simultaneously because their measurements interfere.
 4. In Performance, choose the scenario and open its `results/<scenario>-<timestamp>.json` file. The summary shows overall thresholds and stage comparisons.
 
+To change the number of local virtual users, enter **Local peak VUs** on the Performance page and copy the command it shows. Example: `npm run perf:stress -- --vus 120`. The limit is 200 VUs (Spike needs at least 5). Only k6 on your own computer sends concurrent requests; editing the field only changes the plan and command. For a fair comparison, record the chosen VUs with the JSON result and do not run several scenarios together.
+
 If k6 is installed portably and is not on `PATH`, set `K6_BIN` to the full `k6.exe` path before running. If port 4173 is occupied, start with a different `PORT` and set matching `BASE_URL` in the k6 terminal. The wrapper refuses a non-local `BASE_URL` unless `ALLOW_REMOTE_LOAD=1`; this override is only for a server whose operator has authorized the test.
 
 ## Scenarios and key questions
@@ -33,6 +35,7 @@ The script records phase-specific p95 and failure rates. Stress phases follow **
 - **p95** means 95% of measured requests completed no slower than that duration. Report the endpoint, work factor, VUs, hardware and whether failures were included when comparing numbers.
 - **HTTP 503** means the admission limit was reached. An intentional 503 is still a failed request from the user's perspective and appears in k6's error rate. A threshold breach exits k6 with code 1, while the JSON result is still saved.
 - **Overall verdict:** a run can meet its demonstration thresholds while still containing failed requests in a high-load phase. Inspect the phase table and report the failures rather than calling the entire run error-free.
+- **Low latency does not guarantee PASS:** the overall verdict requires both p95 and error rate below their limits. At high VUs, the 24-job cap can return HTTP 503 quickly. Such a run may show p95 under 100 ms but fail the 15% error-rate threshold. Increasing VUs to force p95 toward 900/1000 ms is not a valid goal by itself; report the actual capacity and failure behavior.
 - **Stress:** compare each ramp's p95/error rate. The first sustained rise or 503 indicates a candidate capacity boundary. Repeat runs to distinguish it from noise.
 - **Spike:** compare baseline, burst and recovery. A return toward baseline after the drop is evidence of recovery; the overall average alone can hide the burst.
 - **Soak:** compare early and late p95/error rate and mean Node heap. Increasing heap in one 90-second run is **not proof of a leak**; garbage collection and allocation patterns matter. A serious leak investigation needs longer repeated runs and process/GC profiling.

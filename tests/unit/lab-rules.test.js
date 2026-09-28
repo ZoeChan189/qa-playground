@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { evaluateThresholds, percentile } from "../../public/shared/evaluation.js";
 import { validatePlan } from "../../public/shared/plan-rules.js";
 import { perfScenarios } from "../../src/domain/perf-scenarios.js";
+import { scenarioWithPeak } from "../../public/shared/perf-profile.js";
 
 const validMetrics = { p95Ms: 280, errorRate: 0.005, p95LimitMs: 500, errorLimit: 0.01 };
 
@@ -56,5 +57,18 @@ describe("performance profiles", () => {
     for (const config of Object.values(perfScenarios)) {
       expect(Math.max(...config.stages.map((stage) => stage.vus))).toBe(config.peakVus);
     }
+  });
+
+  it("scales local stress and soak stages without changing the shared defaults", () => {
+    expect(scenarioWithPeak("stress", perfScenarios.stress, 120).stages.map((stage) => stage.vus)).toEqual([15, 36, 72, 120, 0]);
+    expect(scenarioWithPeak("soak", perfScenarios.soak, 100).stages.map((stage) => stage.vus)).toEqual([100, 100, 0]);
+    expect(perfScenarios.stress.peakVus).toBe(40);
+  });
+
+  it("keeps spike baseline small and rejects unsafe peak values", () => {
+    expect(scenarioWithPeak("spike", perfScenarios.spike, 120).stages.map((stage) => stage.vus)).toEqual([5, 120, 120, 5, 5, 0]);
+    expect(() => scenarioWithPeak("spike", perfScenarios.spike, 4)).toThrow();
+    expect(() => scenarioWithPeak("stress", perfScenarios.stress, 201)).toThrow();
+    expect(() => scenarioWithPeak("stress", perfScenarios.stress, 2.5)).toThrow();
   });
 });

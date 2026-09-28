@@ -1,5 +1,6 @@
 import { evaluateThresholds } from "./shared/evaluation.js";
 import { validatePlan } from "./shared/plan-rules.js";
+import { MAX_LOCAL_PEAK_VUS, scenarioWithPeak } from "./shared/perf-profile.js";
 
 const byId = (id) => document.getElementById(id);
 const topicNames = { performance: "Performance", unit: "Unit", api: "API", e2e: "Web E2E", mobile: "Mobile web", visual: "Visual", ai: "AI-assisted", ci: "CI/CD" };
@@ -82,9 +83,8 @@ function svgElement(tag, attributes = {}, label = "") {
   return node;
 }
 
-function drawVuChart(profile) {
+function drawVuChart(profile, config) {
   const chart = byId("vu-chart");
-  const config = scenarios[profile];
   const totalSeconds = config.stages.reduce((sum, stage) => sum + stage.seconds, 0);
   const left = 43, right = 728, bottom = 205, top = 20;
   const width = right - left, height = bottom - top;
@@ -144,15 +144,36 @@ function selectScenario(profile, updateHash = true) {
   byId("chart-title").textContent = profileCopy[profile].title;
   byId("profile-name").textContent = config.label;
   byId("profile-purpose").textContent = profileCopy[profile].purpose;
-  byId("profile-vus").textContent = `${config.peakVus} VUs`;
   byId("profile-work").textContent = `${(config.work * 1000).toLocaleString()} iterations`;
   byId("profile-p95").textContent = `${config.p95LimitMs} ms`;
   byId("profile-error").textContent = `${config.errorLimit * 100}%`;
-  byId("perf-command").textContent = `npm run perf:${profile}`;
+  byId("perf-vus").min = profile === "spike" ? "5" : "1";
+  byId("perf-vus").value = config.peakVus;
   byId("probe-work").value = config.work;
-  drawVuChart(profile);
+  updatePeak();
   populateCases(profile);
   if (updateHash) location.hash = `#performance/${profile}`;
+}
+
+function updatePeak() {
+  const input = byId("perf-vus");
+  const error = byId("perf-vus-error");
+  const peak = Number(input.value);
+  try {
+    if (!/^\d+$/.test(input.value)) throw new RangeError("Enter a whole number.");
+    const config = scenarioWithPeak(selectedScenario, scenarios[selectedScenario], peak);
+    byId("profile-vus").textContent = `${peak} VUs`;
+    byId("perf-command").textContent = `npm run perf:${selectedScenario}${peak === scenarios[selectedScenario].peakVus ? "" : ` -- --vus ${peak}`}`;
+    byId("copy-perf-command").disabled = false;
+    error.textContent = `${selectedScenario === "spike" ? "5" : "1"}–${MAX_LOCAL_PEAK_VUS} local VUs; this page does not generate load.`;
+    error.classList.remove("error-text");
+    drawVuChart(selectedScenario, config);
+  } catch (cause) {
+    byId("copy-perf-command").disabled = true;
+    byId("perf-command").textContent = "Enter valid local VUs";
+    error.textContent = cause.message;
+    error.classList.add("error-text");
+  }
 }
 
 async function pollTelemetry() {
@@ -232,7 +253,13 @@ async function importSummary(file) {
     if (!config || !Number.isFinite(p95) || !Number.isFinite(errorRate) || !Number.isFinite(requests)) {
       throw new Error("Use a k6 summary exported by this project's perf command.");
     }
-    selectScenario(profile);
+    selectScenario(profile, false);
+    history.replaceState(null, "", `#performance/${profile}`);
+    const importedPeak = metricValue(summary, "configured_peak_vus", "value");
+    if (Number.isInteger(importedPeak) && importedPeak >= 1 && importedPeak <= MAX_LOCAL_PEAK_VUS) {
+      byId("perf-vus").value = importedPeak;
+      updatePeak();
+    }
     const verdict = evaluateThresholds({ p95Ms: p95, errorRate, p95LimitMs: config.p95LimitMs, errorLimit: config.errorLimit });
     const heapMin = metricValue(summary, "server_heap_used_mb", "min");
     const heapMax = metricValue(summary, "server_heap_used_mb", "max");
@@ -247,7 +274,10 @@ async function importSummary(file) {
     byId("summary-verdict").parentElement.className = `summary-verdict ${verdict.passed ? "pass" : "fail"}`;
     byId("summary-empty").hidden = true;
     byId("summary-result").hidden = false;
+    const importedConfig = scenarioWithPeak(profile, config, Number.isInteger(importedPeak) && importedPeak <= MAX_LOCAL_PEAK_VUS ? importedPeak : config.peakVus);
+    const stressStage = { ramp5: 0, ramp12: 1, ramp24: 2, peak40: 3 };
     const rows = phaseLabels[profile].map(([name, label]) => {
+      if (profile === "stress" && name in stressStage) label = `Ramp to ${importedConfig.stages[stressStage[name]].vus}`;
       const phaseP95 = metricValue(summary, `phase_${name}_duration_ms`, "p(95)");
       const phaseErrors = metricValue(summary, `phase_${name}_failed`, "value");
       if (!Number.isFinite(phaseP95) || !Number.isFinite(phaseErrors)) return null;
@@ -266,12 +296,10 @@ async function importSummary(file) {
     byId("heap-comparison").hidden = !Number.isFinite(earlyHeap) || !Number.isFinite(lateHeap);
     if (!byId("heap-comparison").hidden) byId("heap-comparison").textContent = `Mean Node heap: early ${earlyHeap.toFixed(1)} MB, late ${lateHeap.toFixed(1)} MB. A single short run does not prove a leak.`;
     message.className = "inline-message";
-    const outcome = verdict.passed
-      ? errorRate > 0
-        ? `Overall limits were met, but ${(errorRate * 100).toFixed(1)}% of requests failed. Inspect the phases.`
-        : "Overall limits were met with no failed requests."
-      : "A demonstration threshold was breached. Inspect the phases before drawing conclusions.";
-    message.textContent = `Read locally from ${file.name}. ${outcome}`;
+    const latencyStatus = verdict.checks.latencyPassed ? "PASS" : "FAIL";
+    const errorStatus = verdict.checks.errorsPassed ? "PASS" : "FAIL";
+    message.textContent = `Read locally from ${file.name}. p95 ${latencyStatus}: ${p95.toFixed(1)} ms vs ${config.p95LimitMs} ms limit. Errors ${errorStatus}: ${(errorRate * 100).toFixed(2)}% vs ${(config.errorLimit * 100).toFixed(0)}% limit.${verdict.passed && errorRate > 0 ? " Some requests still failed; inspect the phases." : ""}`;
+    message.className = `inline-message ${verdict.passed ? "pass" : "fail"}`;
   } catch (error) {
     message.className = "inline-message fail";
     message.textContent = error.message;
@@ -442,6 +470,7 @@ document.querySelectorAll(".topic-link").forEach((button) => button.addEventList
 document.querySelectorAll("[data-scenario]").forEach((button) => button.addEventListener("click", () => selectScenario(button.dataset.scenario)));
 document.querySelectorAll("[data-visual]").forEach((button) => button.addEventListener("click", () => setVisualVariant(button.dataset.visual)));
 byId("copy-perf-command").addEventListener("click", () => copyText(byId("perf-command").textContent));
+byId("perf-vus").addEventListener("input", updatePeak);
 byId("run-probe").addEventListener("click", runProbe);
 byId("summary-file").addEventListener("change", (event) => { importSummary(event.target.files[0]); event.target.value = ""; });
 byId("unit-form").addEventListener("submit", runUnit);
