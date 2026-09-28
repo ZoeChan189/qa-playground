@@ -4,9 +4,12 @@ One small, real web application for SWT301 testing demonstrations. **Performance
 
 ## Start in Windows
 
-1. Download this repository as a ZIP from GitHub and extract it, or clone it.
-2. Double-click `start-windows.cmd`. It checks Node.js/npm, installs dependencies on first use, reports a missing optional k6 installation, and starts the site.
-3. Open <http://localhost:4173>. Keep the terminal window open while using the site.
+Each group member can run an independent local copy. See the [step-by-step Vietnamese guide](docs/for-team.md) and the [beginner Word guide](docs/QA_Lab_Performance_Huong_dan_de_hieu.docx).
+
+1. On this GitHub page, choose **Code > Download ZIP**, then extract it (or clone the repo).
+2. Install Node.js 20+ and, for real performance runs, Grafana k6. Verify `node -v`, `npm -v`, and `k6 version` in a new terminal.
+3. Double-click `start-windows.cmd`. It installs project dependencies on first use and starts the local site. Open <http://localhost:4173> and keep that terminal open.
+4. Double-click `run-performance-windows.cmd` and choose **5** to run Stress, Spike, and Soak sequentially on your own computer. Import your own new JSON files from `results/` using **Open summary**.
 
 If Node.js is missing or older than 20, install [Node.js 20+](https://nodejs.org/en/download), reopen the terminal, and try again. Other desktop platforms can run `npm ci` then `npm start`. A visitor to a hosted copy only needs a browser. The core lab needs no database, account or paid service; Gemini is optional and requires a server-side API key.
 
