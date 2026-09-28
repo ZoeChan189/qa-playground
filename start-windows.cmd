@@ -14,8 +14,8 @@ if not exist node_modules (
 )
 where k6 >nul 2>nul
 if errorlevel 1 echo Optional for performance runs: install k6 from https://grafana.com/docs/k6/latest/set-up/install-k6/
-echo Opening QA Lab at http://localhost:4173
-start "" "http://localhost:4173"
+set "QA_LAB_OPEN_BROWSER=1"
+echo Starting QA Lab at http://localhost:4173
 call npm start
 pause
 exit /b %errorlevel%

@@ -264,7 +264,12 @@ async function importSummary(file) {
     byId("heap-comparison").hidden = !Number.isFinite(earlyHeap) || !Number.isFinite(lateHeap);
     if (!byId("heap-comparison").hidden) byId("heap-comparison").textContent = `Mean Node heap: early ${earlyHeap.toFixed(1)} MB, late ${lateHeap.toFixed(1)} MB. A single short run does not prove a leak.`;
     message.className = "inline-message";
-    message.textContent = `Read locally from ${file.name}. A breached threshold is evidence to investigate, not automatically a code bug.`;
+    const outcome = verdict.passed
+      ? errorRate > 0
+        ? `Overall limits were met, but ${(errorRate * 100).toFixed(1)}% of requests failed. Inspect the phases.`
+        : "Overall limits were met with no failed requests."
+      : "A demonstration threshold was breached. Inspect the phases before drawing conclusions.";
+    message.textContent = `Read locally from ${file.name}. ${outcome}`;
   } catch (error) {
     message.className = "inline-message fail";
     message.textContent = error.message;

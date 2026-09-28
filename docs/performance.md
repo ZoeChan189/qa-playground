@@ -32,6 +32,7 @@ The script records phase-specific p95 and failure rates. Stress phases follow **
 
 - **p95** means 95% of measured requests completed no slower than that duration. Report the endpoint, work factor, VUs, hardware and whether failures were included when comparing numbers.
 - **HTTP 503** means the admission limit was reached. An intentional 503 is still a failed request from the user's perspective and appears in k6's error rate. A threshold breach exits k6 with code 1, while the JSON result is still saved.
+- **Overall verdict:** a run can meet its demonstration thresholds while still containing failed requests in a high-load phase. Inspect the phase table and report the failures rather than calling the entire run error-free.
 - **Stress:** compare each ramp's p95/error rate. The first sustained rise or 503 indicates a candidate capacity boundary. Repeat runs to distinguish it from noise.
 - **Spike:** compare baseline, burst and recovery. A return toward baseline after the drop is evidence of recovery; the overall average alone can hide the burst.
 - **Soak:** compare early and late p95/error rate and mean Node heap. Increasing heap in one 90-second run is **not proof of a leak**; garbage collection and allocation patterns matter. A serious leak investigation needs longer repeated runs and process/GC profiling.
