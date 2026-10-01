@@ -12,8 +12,10 @@ if not exist node_modules (
   call npm ci
   if errorlevel 1 goto install_failed
 )
-where k6 >nul 2>nul
-if errorlevel 1 echo Optional for performance runs: install k6 from https://grafana.com/docs/k6/latest/set-up/install-k6/
+if not defined K6_BIN (
+  where k6 >nul 2>nul
+  if errorlevel 1 echo Optional for performance runs: install k6 from https://grafana.com/docs/k6/latest/set-up/install-k6/
+)
 set "QA_LAB_OPEN_BROWSER=1"
 echo Starting QA Lab at http://localhost:4173
 call npm start

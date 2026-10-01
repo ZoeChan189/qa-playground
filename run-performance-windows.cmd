@@ -48,7 +48,8 @@ goto after_run
 
 :after_run
 echo.
-echo Open the newest JSON files in the results folder with Open summary on the local web.
+echo The newest result appears automatically on the local web. JSON files are saved in results.
+echo Use Open summary only to inspect an older JSON file.
 echo A failed threshold means the measured limit was crossed; inspect the JSON file.
 pause
 goto menu
