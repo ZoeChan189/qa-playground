@@ -2,20 +2,20 @@
 
 ## Architecture and cost
 
-`npm run perf:*` starts **k6 on the student's own computer**. k6 calls the locally running Express endpoint `GET /api/perf/work?work=N`. Each accepted request performs `N * 1000` PBKDF2 iterations in Node's asynchronous crypto worker pool. This is real computation with real HTTP timing, not a timer that pretends to work. At most 24 jobs are admitted at once; extra requests get HTTP 503 and `Retry-After: 1`. The browser's **Run probe** button sends one request only and cannot start a load run.
+**Run local k6** on the local web page, or `npm run perf:*` in a terminal, starts **k6 on the student's own computer**. k6 calls the locally running Express endpoint `GET /api/perf/work?work=N`. Each accepted request performs `N * 1000` PBKDF2 iterations in Node's asynchronous crypto worker pool. This is real computation with real HTTP timing, not a timer that pretends to work. At most 24 jobs are admitted at once; extra requests get HTTP 503 and `Retry-After: 1`. The browser's **Run probe** button sends one request only.
 
 The server exposes current active jobs, completed and rejected counts, last-1,000 accepted-job p95, and actual `process.memoryUsage().heapUsed`. k6 records client-side p95, request count, failure rate and throughput. **Client p95 and server p95 are different**: the former includes HTTP/network and failures; the latter covers accepted work only. The heap gauge is the Node heap, not total machine RAM, and its normal garbage-collection cycle can make it rise and fall.
 
-No Grafana account or server is necessary for the exercise. Run k6 locally and import its JSON summary into the web page. This keeps the public host out of the load path and avoids paying for hosted load generation. The exported file remains on the student's device. In production mode the workload endpoint is limited to two requests per second per server instance (HTTP 429 above that); use the local app for k6 scenarios.
+No Grafana account or server is necessary for the exercise. The local web page shows the latest k6 summary automatically, without requiring a saved file. Browser-started results remain in the local server's memory until restart. Command-line runs still save JSON to `results/`, and the latest saved run is also shown automatically; **Open summary** can read an older file manually. This keeps the public host out of the load path and avoids paying for hosted load generation. In production mode the workload endpoint is limited to two requests per second per server instance (HTTP 429 above that), and the web run button is disabled.
 
 ## Setup
 
 1. Install Node.js 20+ and [Grafana k6](https://grafana.com/docs/k6/latest/set-up/install-k6/). On Windows, `start-windows.cmd` checks the required Node installation and tells you if k6 is absent.
 2. Start the app with `npm start` and keep that terminal open. Check <http://localhost:4173/api/health>.
-3. In a second terminal, run `npm run perf:load`, then stress, spike and soak **one at a time**. Do not run them simultaneously because their measurements interfere.
-4. In Performance, choose the scenario and open its `results/<scenario>-<timestamp>.json` file. The summary shows overall thresholds and stage comparisons.
+3. On the local Performance page, choose a scenario and click **Run local k6**. Wait until the status says completed before running the next scenario; simultaneous runs interfere with measurements.
+4. Read the updated request totals, latency percentiles, HTTP status counts, thresholds and phase table on the page. For permanent JSON evidence, run `npm run perf:load`, `npm run perf:stress`, `npm run perf:spike` or `npm run perf:soak` in a second terminal.
 
-To change the number of local virtual users, enter **Local peak VUs** on the Performance page and copy the command it shows. Example: `npm run perf:stress -- --vus 120`. The limit is 200 VUs (Spike needs at least 5). Only k6 on your own computer sends concurrent requests; editing the field only changes the plan and command. For a fair comparison, record the chosen VUs with the JSON result and do not run several scenarios together.
+To change the number of local virtual users, enter **Local peak VUs** on the Performance page and click **Run local k6**, or copy the command it shows. Example: `npm run perf:stress -- --vus 120`. The limit is 200 VUs (Spike needs at least 5). Editing the field only changes the plan; clicking **Run local k6** starts the actual test. For a fair comparison, record the chosen VUs with the result and do not run several scenarios together.
 
 If k6 is installed portably and is not on `PATH`, set `K6_BIN` to the full `k6.exe` path before running. If port 4173 is occupied, start with a different `PORT` and set matching `BASE_URL` in the k6 terminal. The wrapper refuses a non-local `BASE_URL` unless `ALLOW_REMOTE_LOAD=1`; this override is only for a server whose operator has authorized the test.
 
@@ -33,7 +33,7 @@ The script records phase-specific p95 and failure rates. Stress phases follow **
 ## Reading a result
 
 - **p95** means 95% of measured requests completed no slower than that duration. Report the endpoint, work factor, VUs, hardware and whether failures were included when comparing numbers.
-- **HTTP 503** means the admission limit was reached. An intentional 503 is still a failed request from the user's perspective and appears in k6's error rate. A threshold breach exits k6 with code 1, while the JSON result is still saved.
+- **HTTP 503** means the admission limit was reached. An intentional 503 is still a failed request from the user's perspective and appears in k6's error rate. A threshold breach makes k6 exit nonzero, but the page still shows the measured result; terminal runs still save JSON.
 - **Overall verdict:** a run can meet its demonstration thresholds while still containing failed requests in a high-load phase. Inspect the phase table and report the failures rather than calling the entire run error-free.
 - **Low latency does not guarantee PASS:** the overall verdict requires both p95 and error rate below their limits. At high VUs, the 24-job cap can return HTTP 503 quickly. Such a run may show p95 under 100 ms but fail the 15% error-rate threshold. Increasing VUs to force p95 toward 900/1000 ms is not a valid goal by itself; report the actual capacity and failure behavior.
 - **Stress:** compare each ramp's p95/error rate. The first sustained rise or 503 indicates a candidate capacity boundary. Repeat runs to distinguish it from noise.
@@ -50,6 +50,7 @@ Save results from more than one run on the same machine. Do not compare differen
 | `k6 is missing` | Install k6 or set `K6_BIN` to the executable path; reopen the terminal. |
 | `QA Lab is not available` | Start `npm start`; verify the port and `BASE_URL`. |
 | k6 exits 1 after printing a result | Read `THRESHOLDS`; a breached performance criterion is a measured test failure. |
+| The page still shows an old result | Wait for the new run to complete; while running the previous result is hidden. Verify the completion time and selected peak VUs. Refresh the local page if needed. |
 | Some stress/spike requests are 503 | Expected at the 24-job admission cap. Compare phase failure rates and recovery. |
 | Summary import rejects a file | Select an unmodified JSON file created by this repo's `npm run perf:*` wrapper. |
 | Browser heap line rises | Check longer/repeated runs and GC before claiming a leak. |

@@ -8,6 +8,8 @@ import { evaluateThresholds, percentile } from "../public/shared/evaluation.js";
 import { validatePlan } from "../public/shared/plan-rules.js";
 import { perfScenarios } from "./domain/perf-scenarios.js";
 import { aiTopics, generateAiCases } from "./domain/ai-assistant.js";
+import { createLocalPerfRunner } from "./domain/local-perf-runner.js";
+import { scenarioWithPeak } from "../public/shared/perf-profile.js";
 
 const deriveKey = promisify(pbkdf2);
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
@@ -55,7 +57,7 @@ function createTelemetry() {
   };
 }
 
-export function createApp({ aiFetch = fetch } = {}) {
+export function createApp({ aiFetch = fetch, perfRunner = createLocalPerfRunner() } = {}) {
   const app = express();
   const telemetry = createTelemetry();
   const plans = new Map();
@@ -88,6 +90,32 @@ export function createApp({ aiFetch = fetch } = {}) {
 
   app.get("/api/perf/metrics", (_request, response) => {
     response.json(telemetry.snapshot());
+  });
+
+  app.get("/api/perf/runs/latest", async (_request, response) => {
+    response.json(await perfRunner.latest());
+  });
+
+  app.post("/api/perf/runs", (request, response) => {
+    const host = request.get("host") || "";
+    const origin = request.get("origin") || "";
+    const address = request.socket.remoteAddress || "";
+    const localHost = /^(localhost|127\.0\.0\.1|\[::1\]):\d+$/.test(host);
+    const localAddress = /^(127\.0\.0\.1|::1|::ffff:127\.0\.0\.1)$/.test(address);
+    if (!localHost || !localAddress || origin !== `http://${host}`) {
+      return response.status(403).json({ error: "local_only", message: "Start k6 only from the local QA Lab page." });
+    }
+    const { scenario, peakVus } = request.body ?? {};
+    if (!perfScenarios[scenario]) {
+      return response.status(400).json({ error: "invalid_run", message: "Choose Load, Stress, Spike or Soak." });
+    }
+    try {
+      scenarioWithPeak(scenario, perfScenarios[scenario], peakVus);
+    } catch (error) {
+      return response.status(400).json({ error: "invalid_run", message: error.message });
+    }
+    const result = perfRunner.start(scenario, peakVus);
+    return response.status(result.status).json(result.ok ? { run: result.run } : { error: result.error, message: result.message });
   });
 
   app.get("/api/perf/work", async (request, response, next) => {

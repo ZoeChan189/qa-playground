@@ -7,6 +7,24 @@ beforeEach(() => { app = createApp(); });
 afterEach(() => vi.unstubAllEnvs());
 
 describe("QA Lab API", () => {
+  it("starts k6 only from a local same-origin page and validates the profile", async () => {
+    const perfRunner = {
+      latest: vi.fn().mockResolvedValue({ canRun: true, reason: null, run: null }),
+      start: vi.fn().mockReturnValue({ ok: true, status: 202, run: { id: "new-run", status: "running" } }),
+    };
+    const localApp = createApp({ perfRunner });
+    expect((await request(localApp).get("/api/perf/runs/latest")).body.canRun).toBe(true);
+    const post = (body) => request(localApp).post("/api/perf/runs")
+      .set("Host", "localhost:4173").set("Origin", "http://localhost:4173").send(body);
+    expect((await post({ scenario: "stress", peakVus: 40 })).status).toBe(202);
+    expect(perfRunner.start).toHaveBeenCalledWith("stress", 40);
+    expect((await post({ scenario: "spike", peakVus: 4 })).status).toBe(400);
+    expect((await post({ scenario: "unknown", peakVus: 40 })).status).toBe(400);
+    expect((await request(localApp).post("/api/perf/runs").set("Host", "localhost:4173")
+      .set("Origin", "https://example.com").send({ scenario: "stress", peakVus: 40 })).status).toBe(403);
+    expect(perfRunner.start).toHaveBeenCalledTimes(1);
+  });
+
   it("exposes health, all four profiles and the case catalog", async () => {
     const health = await request(app).get("/api/health");
     expect(health.status).toBe(200);

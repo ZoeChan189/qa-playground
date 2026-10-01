@@ -1,7 +1,7 @@
 import http from "k6/http";
 import { check, sleep } from "k6";
 import exec from "k6/execution";
-import { Gauge, Rate, Trend } from "k6/metrics";
+import { Counter, Gauge, Rate, Trend } from "k6/metrics";
 import { perfScenarios } from "../src/domain/perf-scenarios.js";
 import { scenarioWithPeak } from "../public/shared/perf-profile.js";
 
@@ -14,10 +14,14 @@ if (!localTarget && __ENV.ALLOW_REMOTE_LOAD !== "1") {
 const serverHeap = new Gauge("server_heap_used_mb");
 const serverActive = new Gauge("server_active_jobs");
 const configuredPeak = new Gauge("configured_peak_vus");
+const status200 = new Counter("http_status_200");
+const status503 = new Counter("http_status_503");
+const statusOther = new Counter("http_status_other");
 const phaseNames = ["baseline", "ramp5", "ramp12", "ramp24", "peak40", "burst", "recovery", "early", "late"];
 const phaseMetrics = Object.fromEntries(phaseNames.map((name) => [name, {
   duration: new Trend(`phase_${name}_duration_ms`, true),
   failed: new Rate(`phase_${name}_failed`),
+  requests: new Counter(`phase_${name}_requests`),
 }]));
 const earlyHeap = new Trend("phase_early_heap_mb");
 const lateHeap = new Trend("phase_late_heap_mb");
@@ -64,9 +68,13 @@ export function exercise(profile) {
     tags: { profile, phase: phase || "middle" },
     timeout: "15s",
   });
+  if (response.status === 200) status200.add(1);
+  else if (response.status === 503) status503.add(1);
+  else statusOther.add(1);
   if (phase) {
     phaseMetrics[phase].duration.add(response.timings.duration);
     phaseMetrics[phase].failed.add(response.status !== 200);
+    phaseMetrics[phase].requests.add(1);
   }
   check(response, {
     "HTTP 200": (result) => result.status === 200,

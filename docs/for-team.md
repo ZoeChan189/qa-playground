@@ -3,8 +3,8 @@
 Repository công khai: https://github.com/ZoeChan189/qa-playground
 
 **Cả bốn thành viên phải tự làm trên máy riêng.** Mỗi người tải cùng mã nguồn
-từ GitHub, chạy web local, chạy k6 và tạo ba file kết quả Stress, Spike, Soak
-của chính mình. Chỉ mở link Render hoặc xem JSON của người khác chưa phải là
+từ GitHub, chạy web local, chạy k6 với Stress, Spike, Soak
+của chính mình. Chỉ mở link Render hoặc xem kết quả của người khác chưa phải là
 tự test.
 
 ## 1. Cài công cụ trên mỗi máy Windows
@@ -31,26 +31,27 @@ nếu bạn chưa quen giao diện.
 
 1. Nhấp đúp `start-windows.cmd`. Lần đầu cần Internet để cài thư viện. Giữ
    cửa sổ đen này mở. Trên **cùng máy đó**, vào http://localhost:4173/ .
-2. Nhấp đúp `run-performance-windows.cmd`. Chọn **5** để k6 chạy lần lượt
-   Stress, Spike, Soak. Mỗi bài cần chạy xong mới tới bài tiếp theo.
-3. Mở thư mục `results/`. Cần thấy ba JSON mới, tên bắt đầu bằng `stress-`,
-   `spike-`, `soak-`.
-4. Trên web local vào Performance, bấm **Open summary** và chọn lần lượt ba
-   JSON của **chính máy mình**. Xem p95, Error rate và kết luận. Giữ ba file
-   để làm bằng chứng; có thể chụp thêm ảnh trang kết quả.
+2. Trên web local vào **Performance**, chọn **Stress** rồi bấm **Run local k6**.
+   Chờ dòng trạng thái báo hoàn tất. Xem số request, p95, Error rate, số HTTP
+   503 và từng giai đoạn ở ngay bên dưới. Chụp ảnh màn hình làm bằng chứng.
+3. Làm tương tự với **Spike** và **Soak**, mỗi lần chỉ chạy một bài. Sau mỗi
+   lần hoàn tất, kiểm tra thời gian **Completed at** và tên bài đã đổi sang
+   lần test mới, không dùng lại số liệu từ lần trước.
+4. Nếu cần **file JSON** để nộp, nhấp đúp `run-performance-windows.cmd`, chọn
+   **5**. Ba bài sẽ chạy lần lượt và lưu JSON vào `results/`. Web local sẽ tự
+   hiện bản mới nhất; **Open summary** chỉ dùng khi muốn đọc một file cũ.
 
 Thích gõ lệnh hơn thì mở Command Prompt thứ hai trong thư mục dự án và chạy
 lần lượt `npm run perf:stress`, `npm run perf:spike`, `npm run perf:soak`.
 Muốn đổi mức người dùng ảo, nhập **Local peak VUs** trên trang Performance rồi
-chép lệnh được tạo, ví dụ `npm run perf:stress -- --vus 100`. Chạy lệnh này
-trong thư mục dự án trên máy mình. Giới hạn thực hành là 200 VU; đây không phải
-nút chạy test trên trình duyệt. Nếu p95 vẫn thấp nhưng Error rate vượt ngưỡng,
+chép lệnh được tạo, ví dụ `npm run perf:stress -- --vus 100`, hoặc bấm
+**Run local k6** trên web local. Giới hạn thực hành là 200 VU. Nếu p95 vẫn thấp nhưng Error rate vượt ngưỡng,
 kết quả tổng thể vẫn là **FAIL**. API nhận tối đa 24 job cùng lúc, nên tải cao
 có thể sinh HTTP 503 rất nhanh thay vì làm p95 tăng lên 900 ms.
 
 **Đừng nhầm:** chọn tab Stress/Spike/Soak chỉ xem kế hoạch; **Run probe** chỉ
-gửi một request; **Open summary** chỉ đọc file JSON. Lệnh k6 trong terminal
-mới tạo tải thật. Bốn người đều dùng địa chỉ `localhost:4173`, nhưng mỗi địa
+gửi một request; **Run local k6** mới tạo tải thật; **Open summary** chỉ đọc
+file JSON cũ. Bốn người đều dùng địa chỉ `localhost:4173`, nhưng mỗi địa
 chỉ trỏ về chính máy của người đó.
 
 **Không chạy k6 vào link Render công khai.** Các script trong repository mặc
@@ -100,7 +101,7 @@ Nếu deploy lỗi, kiểm tra repo có `package.json` ở gốc, hai lệnh `np
 Render](https://render.com/docs/deploy-node-express-app).
 
 **Deploy link riêng không thay thế bài Performance local.** Cả bốn bạn vẫn
-chạy Stress, Spike, Soak trên máy mình và giữ ba JSON kết quả của mình.
+chạy Stress, Spike, Soak trên máy mình và chụp kết quả hoặc lưu ba JSON của mình.
 
 ## 6. Lỗi thường gặp
 

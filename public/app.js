@@ -34,6 +34,14 @@ let selectedScenario = "stress";
 const heapHistory = [];
 let aiReady = false;
 let aiRequiresCode = false;
+let localK6Ready = false;
+let runActive = false;
+let runStartPending = false;
+let latestAutoId = null;
+let latestAutoStatus = null;
+let manualSummary = false;
+let autoIdAtImport = null;
+let latestPollPending = false;
 
 function toast(message, error = false) {
   const node = document.createElement("div");
@@ -62,7 +70,7 @@ function showTopic(topic) {
   document.querySelectorAll(".view").forEach((section) => section.classList.toggle("active", section.id === `view-${topic}`));
   byId("current-topic").textContent = topicNames[topic];
   if (topic === "mobile") measureMobile();
-  if (topic === "performance") pollTelemetry();
+  if (topic === "performance") { pollTelemetry(); pollLatestRun(); }
 }
 
 function navigate(topic) {
@@ -165,11 +173,13 @@ function updatePeak() {
     byId("profile-vus").textContent = `${peak} VUs`;
     byId("perf-command").textContent = `npm run perf:${selectedScenario}${peak === scenarios[selectedScenario].peakVus ? "" : ` -- --vus ${peak}`}`;
     byId("copy-perf-command").disabled = false;
+    byId("run-k6").disabled = !localK6Ready || runActive || runStartPending;
     error.textContent = `${selectedScenario === "spike" ? "5" : "1"}–${MAX_LOCAL_PEAK_VUS} local VUs; this page does not generate load.`;
     error.classList.remove("error-text");
     drawVuChart(selectedScenario, config);
   } catch (cause) {
     byId("copy-perf-command").disabled = true;
+    byId("run-k6").disabled = true;
     byId("perf-command").textContent = "Enter valid local VUs";
     error.textContent = cause.message;
     error.classList.add("error-text");
@@ -239,70 +249,220 @@ function metricValue(summary, metric, key) {
   return data?.values?.[key] ?? data?.[key];
 }
 
-async function importSummary(file) {
+function tableRow(values, lastClass = "") {
+  const row = document.createElement("tr");
+  values.forEach((value, index) => {
+    const cell = document.createElement("td");
+    cell.textContent = value;
+    if (lastClass && index === values.length - 1) cell.className = lastClass;
+    row.append(cell);
+  });
+  return row;
+}
+
+function readableTime(value) {
+  const date = value ? new Date(value) : null;
+  return date && !Number.isNaN(date.getTime()) ? date.toLocaleString() : "–";
+}
+
+function clearSummary() {
+  byId("summary-empty").hidden = false;
+  byId("summary-result").hidden = true;
+  byId("summary-detail").hidden = true;
+  byId("phase-section").hidden = true;
+  byId("summary-message").textContent = "";
+}
+
+function renderSummary(summary, profile, source = {}) {
+  const config = scenarios[profile];
+  const p95 = metricValue(summary, "http_req_duration", "p(95)");
+  const errorRate = metricValue(summary, "http_req_failed", "value") ?? metricValue(summary, "http_req_failed", "rate");
+  const requests = metricValue(summary, "http_reqs", "count");
+  if (!config || !Number.isFinite(p95) || !Number.isFinite(errorRate) || !Number.isFinite(requests)) {
+    throw new Error("Use a k6 summary exported by this project's perf command.");
+  }
+  selectScenario(profile, false);
+  history.replaceState(null, "", `#performance/${profile}`);
+  const importedPeak = metricValue(summary, "configured_peak_vus", "value");
+  const peak = Number.isInteger(importedPeak) && importedPeak >= (profile === "spike" ? 5 : 1) && importedPeak <= MAX_LOCAL_PEAK_VUS
+    ? importedPeak : config.peakVus;
+  byId("perf-vus").value = peak;
+  updatePeak();
+  const verdict = evaluateThresholds({ p95Ms: p95, errorRate, p95LimitMs: config.p95LimitMs, errorLimit: config.errorLimit });
+  const heapMin = metricValue(summary, "server_heap_used_mb", "min");
+  const heapMax = metricValue(summary, "server_heap_used_mb", "max");
+  const peakActive = metricValue(summary, "server_active_jobs", "max");
+  byId("summary-profile").textContent = config.label;
+  byId("summary-requests").textContent = requests.toLocaleString();
+  byId("summary-p95").textContent = `${p95.toFixed(0)} ms`;
+  byId("summary-errors").textContent = `${(errorRate * 100).toFixed(1)}%`;
+  byId("summary-active").textContent = Number.isFinite(peakActive) ? String(Math.round(peakActive)) : "–";
+  byId("summary-heap").textContent = Number.isFinite(heapMin) && Number.isFinite(heapMax) ? `${heapMin.toFixed(1)}–${heapMax.toFixed(1)} MB` : "–";
+  byId("summary-verdict").textContent = verdict.passed ? "WITHIN LIMITS" : "LIMIT BREACHED";
+  byId("summary-verdict").parentElement.className = `summary-verdict ${verdict.passed ? "pass" : "fail"}`;
+  byId("summary-empty").hidden = true;
+  byId("summary-result").hidden = false;
+
+  const whole = (value) => Number.isFinite(value) ? Math.round(value).toLocaleString() : "–";
+  const ms = (value) => Number.isFinite(value) ? `${value.toFixed(1)} ms` : "–";
+  const requestRate = metricValue(summary, "http_reqs", "rate");
+  const failedCount = metricValue(summary, "http_req_failed", "passes");
+  const hasStatusCounts = ["http_status_200", "http_status_503", "http_status_other"]
+    .some((name) => Number.isFinite(metricValue(summary, name, "count")));
+  const statusCount = (name) => whole(metricValue(summary, name, "count") ?? (hasStatusCounts ? 0 : null));
+  const rows = [
+    ["Completed at", readableTime(source.finishedAt), "Time this summary became available"],
+    ["Configured peak", `${peak} VUs`, "Maximum planned virtual users"],
+    ["Requests per second", Number.isFinite(requestRate) ? requestRate.toFixed(1) : "–", "Average across the whole run"],
+    ["Failed requests", whole(Number.isFinite(failedCount) ? failedCount : requests * errorRate), "HTTP requests counted as failed by k6"],
+    ["HTTP 200", statusCount("http_status_200"), "Successful work responses"],
+    ["HTTP 503", statusCount("http_status_503"), "Requests rejected at the capacity limit"],
+    ["Other status", statusCount("http_status_other"), "Other responses, including timeouts"],
+    ["Latency min", ms(metricValue(summary, "http_req_duration", "min")), "Fastest recorded HTTP response"],
+    ["Latency average", ms(metricValue(summary, "http_req_duration", "avg")), "Arithmetic mean across requests"],
+    ["Latency median", ms(metricValue(summary, "http_req_duration", "med")), "Half the requests are at or below this"],
+    ["Latency p90", ms(metricValue(summary, "http_req_duration", "p(90)")), "90% of requests are at or below this"],
+    ["Latency p95", ms(p95), "Compared with the scenario limit"],
+    ["Latency max", ms(metricValue(summary, "http_req_duration", "max")), "Slowest recorded HTTP response"],
+    ["Iterations", whole(metricValue(summary, "iterations", "count")), "Completed k6 virtual-user loops"],
+    ["Data received", Number.isFinite(metricValue(summary, "data_received", "count")) ? `${(metricValue(summary, "data_received", "count") / 1048576).toFixed(2)} MB` : "–", "Total response data"],
+  ];
+  byId("detail-rows").replaceChildren(...rows.map((row) => tableRow(row)));
+  byId("summary-source").textContent = `${source.label || "Imported k6 summary"} · ${readableTime(source.finishedAt)}`;
+  byId("summary-detail").hidden = false;
+  byId("threshold-rows").replaceChildren(
+    tableRow(["p95 latency", ms(p95), `< ${config.p95LimitMs} ms`, verdict.checks.latencyPassed ? "PASS" : "FAIL"], verdict.checks.latencyPassed ? "threshold-pass" : "threshold-fail"),
+    tableRow(["Failed requests", `${(errorRate * 100).toFixed(2)}%`, `< ${(config.errorLimit * 100).toFixed(0)}%`, verdict.checks.errorsPassed ? "PASS" : "FAIL"], verdict.checks.errorsPassed ? "threshold-pass" : "threshold-fail"),
+  );
+
+  const importedConfig = scenarioWithPeak(profile, config, peak);
+  const stressStage = { ramp5: 0, ramp12: 1, ramp24: 2, peak40: 3 };
+  const phaseRows = phaseLabels[profile].map(([name, originalLabel]) => {
+    const label = profile === "stress" && name in stressStage ? `Ramp to ${importedConfig.stages[stressStage[name]].vus}` : originalLabel;
+    const phaseP95 = metricValue(summary, `phase_${name}_duration_ms`, "p(95)");
+    const phaseErrors = metricValue(summary, `phase_${name}_failed`, "value");
+    const phaseRequests = metricValue(summary, `phase_${name}_requests`, "count");
+    if (!Number.isFinite(phaseP95) || !Number.isFinite(phaseErrors)) return null;
+    return tableRow([label, whole(phaseRequests), `${phaseP95.toFixed(0)} ms`, `${(phaseErrors * 100).toFixed(1)}%`]);
+  }).filter(Boolean);
+  byId("phase-rows").replaceChildren(...phaseRows);
+  byId("phase-section").hidden = phaseRows.length === 0;
+  const earlyHeap = metricValue(summary, "phase_early_heap_mb", "avg");
+  const lateHeap = metricValue(summary, "phase_late_heap_mb", "avg");
+  byId("heap-comparison").hidden = !Number.isFinite(earlyHeap) || !Number.isFinite(lateHeap);
+  if (!byId("heap-comparison").hidden) byId("heap-comparison").textContent = `Mean Node heap: early ${earlyHeap.toFixed(1)} MB, late ${lateHeap.toFixed(1)} MB. A single short run does not prove a leak.`;
+  const latencyStatus = verdict.checks.latencyPassed ? "PASS" : "FAIL";
+  const errorStatus = verdict.checks.errorsPassed ? "PASS" : "FAIL";
   const message = byId("summary-message");
+  message.textContent = `p95 ${latencyStatus}: ${p95.toFixed(1)} ms vs ${config.p95LimitMs} ms limit. Errors ${errorStatus}: ${(errorRate * 100).toFixed(2)}% vs ${(config.errorLimit * 100).toFixed(0)}% limit.${verdict.passed && errorRate > 0 ? " Some requests still failed; inspect the phases." : ""}`;
+  message.className = `inline-message ${verdict.passed ? "pass" : "fail"}`;
+}
+
+function showRunState(title, detail, failed = false) {
+  const state = byId("run-state");
+  state.hidden = false;
+  state.className = `run-state${failed ? " fail" : ""}`;
+  byId("run-state-title").textContent = title;
+  byId("run-state-detail").textContent = detail;
+}
+
+async function importSummary(file) {
   if (!file) return;
+  manualSummary = true;
+  autoIdAtImport = latestAutoId;
+  clearSummary();
   try {
     if (file.size > 5_000_000) throw new Error("Summary file is too large.");
     const summary = JSON.parse(await file.text());
-    const profile = file.name.split("-")[0];
-    const config = scenarios[profile];
-    const p95 = metricValue(summary, "http_req_duration", "p(95)");
-    const errorRate = metricValue(summary, "http_req_failed", "value") ?? metricValue(summary, "http_req_failed", "rate");
-    const requests = metricValue(summary, "http_reqs", "count");
-    if (!config || !Number.isFinite(p95) || !Number.isFinite(errorRate) || !Number.isFinite(requests)) {
-      throw new Error("Use a k6 summary exported by this project's perf command.");
-    }
-    selectScenario(profile, false);
-    history.replaceState(null, "", `#performance/${profile}`);
-    const importedPeak = metricValue(summary, "configured_peak_vus", "value");
-    if (Number.isInteger(importedPeak) && importedPeak >= 1 && importedPeak <= MAX_LOCAL_PEAK_VUS) {
-      byId("perf-vus").value = importedPeak;
-      updatePeak();
-    }
-    const verdict = evaluateThresholds({ p95Ms: p95, errorRate, p95LimitMs: config.p95LimitMs, errorLimit: config.errorLimit });
-    const heapMin = metricValue(summary, "server_heap_used_mb", "min");
-    const heapMax = metricValue(summary, "server_heap_used_mb", "max");
-    const peakActive = metricValue(summary, "server_active_jobs", "max");
-    byId("summary-profile").textContent = config.label;
-    byId("summary-requests").textContent = requests.toLocaleString();
-    byId("summary-p95").textContent = `${p95.toFixed(0)} ms`;
-    byId("summary-errors").textContent = `${(errorRate * 100).toFixed(1)}%`;
-    byId("summary-active").textContent = Number.isFinite(peakActive) ? String(Math.round(peakActive)) : "–";
-    byId("summary-heap").textContent = Number.isFinite(heapMin) && Number.isFinite(heapMax) ? `${heapMin.toFixed(1)}–${heapMax.toFixed(1)} MB` : "–";
-    byId("summary-verdict").textContent = verdict.passed ? "WITHIN LIMITS" : "LIMIT BREACHED";
-    byId("summary-verdict").parentElement.className = `summary-verdict ${verdict.passed ? "pass" : "fail"}`;
-    byId("summary-empty").hidden = true;
-    byId("summary-result").hidden = false;
-    const importedConfig = scenarioWithPeak(profile, config, Number.isInteger(importedPeak) && importedPeak <= MAX_LOCAL_PEAK_VUS ? importedPeak : config.peakVus);
-    const stressStage = { ramp5: 0, ramp12: 1, ramp24: 2, peak40: 3 };
-    const rows = phaseLabels[profile].map(([name, label]) => {
-      if (profile === "stress" && name in stressStage) label = `Ramp to ${importedConfig.stages[stressStage[name]].vus}`;
-      const phaseP95 = metricValue(summary, `phase_${name}_duration_ms`, "p(95)");
-      const phaseErrors = metricValue(summary, `phase_${name}_failed`, "value");
-      if (!Number.isFinite(phaseP95) || !Number.isFinite(phaseErrors)) return null;
-      const row = document.createElement("tr");
-      [label, `${phaseP95.toFixed(0)} ms`, `${(phaseErrors * 100).toFixed(1)}%`].forEach((value) => {
-        const cell = document.createElement("td");
-        cell.textContent = value;
-        row.append(cell);
-      });
-      return row;
-    }).filter(Boolean);
-    byId("phase-rows").replaceChildren(...rows);
-    byId("phase-section").hidden = rows.length === 0;
-    const earlyHeap = metricValue(summary, "phase_early_heap_mb", "avg");
-    const lateHeap = metricValue(summary, "phase_late_heap_mb", "avg");
-    byId("heap-comparison").hidden = !Number.isFinite(earlyHeap) || !Number.isFinite(lateHeap);
-    if (!byId("heap-comparison").hidden) byId("heap-comparison").textContent = `Mean Node heap: early ${earlyHeap.toFixed(1)} MB, late ${lateHeap.toFixed(1)} MB. A single short run does not prove a leak.`;
-    message.className = "inline-message";
-    const latencyStatus = verdict.checks.latencyPassed ? "PASS" : "FAIL";
-    const errorStatus = verdict.checks.errorsPassed ? "PASS" : "FAIL";
-    message.textContent = `Read locally from ${file.name}. p95 ${latencyStatus}: ${p95.toFixed(1)} ms vs ${config.p95LimitMs} ms limit. Errors ${errorStatus}: ${(errorRate * 100).toFixed(2)}% vs ${(config.errorLimit * 100).toFixed(0)}% limit.${verdict.passed && errorRate > 0 ? " Some requests still failed; inspect the phases." : ""}`;
-    message.className = `inline-message ${verdict.passed ? "pass" : "fail"}`;
+    renderSummary(summary, file.name.split("-")[0], { label: `Opened ${file.name}`, finishedAt: file.lastModified });
+    showRunState("Imported summary", file.name);
   } catch (error) {
-    message.className = "inline-message fail";
-    message.textContent = error.message;
+    showRunState("Could not open summary", error.message, true);
+    byId("summary-message").className = "inline-message fail";
+    byId("summary-message").textContent = error.message;
+  }
+}
+
+async function pollLatestRun() {
+  if (!scenarios || latestPollPending || document.hidden || !byId("view-performance").classList.contains("active")) return;
+  latestPollPending = true;
+  try {
+    const response = await fetch("/api/perf/runs/latest", { cache: "no-store" });
+    if (!response.ok) throw new Error("Local run status unavailable.");
+    const data = await response.json();
+    localK6Ready = data.canRun;
+    runActive = data.run?.status === "running";
+    const availability = byId("run-availability");
+    availability.textContent = data.canRun ? "Run k6 here on this computer; the latest result appears automatically."
+      : data.reason === "hosted" ? "Hosted view: run k6 on a local QA Lab copy, or open a summary."
+        : "k6 is missing. Install Grafana k6, then restart QA Lab.";
+    byId("k6-install").hidden = data.canRun || data.reason === "hosted";
+    updatePeak();
+    const run = data.run;
+    if (!run || runStartPending) return;
+    if (manualSummary && run.id === autoIdAtImport) return;
+    if (manualSummary && run.id !== autoIdAtImport) manualSummary = false;
+    if (run.id === latestAutoId && run.status === latestAutoStatus) return;
+    latestAutoId = run.id;
+    latestAutoStatus = run.status;
+    if (run.status === "running") {
+      clearSummary();
+      showRunState(`${run.scenario.toUpperCase()} test running`, `${run.peakVus} VUs peak · started ${readableTime(run.startedAt)} · live server counters above`);
+    } else if (run.status === "complete") {
+      try {
+        renderSummary(run.summary, run.scenario, {
+          label: run.source === "saved" ? `Latest saved run: ${run.filename}` : "Latest local k6 run",
+          finishedAt: run.finishedAt,
+        });
+        showRunState("Latest test completed", `${run.scenario.toUpperCase()} · ${readableTime(run.finishedAt)} · result updated automatically`);
+      } catch (error) {
+        clearSummary();
+        showRunState("Invalid k6 result", error.message, true);
+      }
+    } else {
+      clearSummary();
+      showRunState("k6 run failed", run.message || "No valid summary was produced. Check k6 installation and try again.", true);
+    }
+  } catch {
+    localK6Ready = false;
+    byId("run-k6").disabled = true;
+    byId("run-availability").textContent = "Could not check local k6. Reopen the local QA Lab page.";
+    byId("k6-install").hidden = true;
+  } finally {
+    latestPollPending = false;
+  }
+}
+
+async function startK6Run() {
+  const peakVus = Number(byId("perf-vus").value);
+  try {
+    scenarioWithPeak(selectedScenario, scenarios[selectedScenario], peakVus);
+  } catch (error) {
+    showRunState("Invalid peak VUs", error.message, true);
+    return;
+  }
+  runStartPending = true;
+  byId("run-k6").disabled = true;
+  clearSummary();
+  showRunState("Starting local k6", `${selectedScenario.toUpperCase()} · ${peakVus} VUs peak`);
+  try {
+    const response = await fetch("/api/perf/runs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scenario: selectedScenario, peakVus }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.message || "Could not start k6.");
+    manualSummary = false;
+    latestAutoId = null;
+    latestAutoStatus = null;
+  } catch (error) {
+    manualSummary = true;
+    autoIdAtImport = latestAutoId;
+    showRunState("Could not start k6", error.message, true);
+  } finally {
+    runStartPending = false;
+    await pollLatestRun();
   }
 }
 
@@ -472,6 +632,7 @@ document.querySelectorAll("[data-visual]").forEach((button) => button.addEventLi
 byId("copy-perf-command").addEventListener("click", () => copyText(byId("perf-command").textContent));
 byId("perf-vus").addEventListener("input", updatePeak);
 byId("run-probe").addEventListener("click", runProbe);
+byId("run-k6").addEventListener("click", startK6Run);
 byId("summary-file").addEventListener("change", (event) => { importSummary(event.target.files[0]); event.target.value = ""; });
 byId("unit-form").addEventListener("submit", runUnit);
 byId("api-preset").addEventListener("change", updateApiPreset);
@@ -500,8 +661,10 @@ try {
   byId("summary-file").disabled = false;
   syncRoute();
   pollTelemetry();
+  pollLatestRun();
 } catch {
   toast("Performance scenarios could not be loaded.", true);
   syncRoute();
 }
-setInterval(() => { if (!document.hidden) { checkHealth(); pollTelemetry(); } }, 2000);
+setInterval(() => { if (!document.hidden) { checkHealth(); pollTelemetry(); pollLatestRun(); } }, 2000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { pollTelemetry(); pollLatestRun(); } });

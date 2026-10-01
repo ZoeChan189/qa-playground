@@ -54,6 +54,48 @@ test("k6 summary import reads flat metrics and phase comparison", async ({ page 
   await expect(page.locator("#summary-message")).toHaveClass(/fail/);
 });
 
+test("local k6 replaces stale details after each completed run", async ({ page }) => {
+  const summary = (count) => ({ metrics: {
+    configured_peak_vus: { value: 5 },
+    http_reqs: { count, rate: count / 17 },
+    http_req_duration: { min: 1, avg: 8, med: 7, "p(90)": 14, "p(95)": 16, max: 30 },
+    http_req_failed: { value: 0, passes: 0 },
+    http_status_200: { count }, http_status_503: { count: 0 }, http_status_other: { count: 0 },
+    phase_baseline_requests: { count }, phase_baseline_duration_ms: { "p(95)": 16 },
+    phase_baseline_failed: { value: 0 },
+  } });
+  let run = { id: "old", status: "complete", scenario: "load", peakVus: 5, finishedAt: "2026-09-30T10:00:00Z", summary: summary(12) };
+  let next = 1;
+  await page.route("**/api/perf/runs/latest", (route) => route.fulfill({ json: { canRun: true, reason: null, run } }));
+  await page.route("**/api/perf/runs", (route) => {
+    run = { id: `new-${next++}`, status: "running", scenario: "load", peakVus: 5, startedAt: new Date().toISOString() };
+    return route.fulfill({ status: 202, json: { run } });
+  });
+  await page.goto("/#performance/load");
+  await expect(page.locator("#summary-requests")).toHaveText("12");
+  await page.locator("#run-k6").click();
+  await expect(page.locator("#summary-result")).toBeHidden();
+  await expect(page.locator("#run-state-title")).toHaveText("LOAD test running");
+  run = { ...run, status: "complete", finishedAt: new Date().toISOString(), summary: summary(37) };
+  await expect(page.locator("#summary-requests")).toHaveText("37");
+  await expect(page.locator("#detail-rows")).toContainText("HTTP 200");
+  await expect(page.locator("#detail-rows tr").filter({ hasText: "HTTP 503" }).locator("td").nth(1)).toHaveText("0");
+  await expect(page.locator("#phase-rows")).toContainText("37");
+  await page.locator("#run-k6").click();
+  await expect(page.locator("#summary-result")).toBeHidden();
+  run = { ...run, status: "complete", finishedAt: new Date().toISOString(), summary: summary(58) };
+  await expect(page.locator("#summary-requests")).toHaveText("58");
+  await expect(page.locator("#summary-source")).toContainText("Latest local k6 run");
+});
+
+test("hosted view does not offer a load-generating button", async ({ page }) => {
+  await page.route("**/api/perf/runs/latest", (route) => route.fulfill({ json: { canRun: false, reason: "hosted", run: null } }));
+  await page.goto("/");
+  await expect(page.locator("#run-k6")).toBeDisabled();
+  await expect(page.locator("#run-availability")).toContainText("Hosted view");
+  await expect(page.locator("#summary-file")).toBeEnabled();
+});
+
 test("unit and API workbenches expose pass and validation failure", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Unit", exact: true }).click();

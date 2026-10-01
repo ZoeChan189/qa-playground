@@ -131,6 +131,10 @@ textarea { resize: vertical; line-height: 1.5; }
 .file-button { position: relative; overflow: hidden; cursor: pointer; }
 .file-button input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 .file-button:focus-within { outline: 2px solid var(--teal); outline-offset: 2px; }
+.run-state { display: flex; flex-wrap: wrap; gap: 7px 16px; align-items: baseline; margin-bottom: 14px; padding: 11px 14px; border-left: 3px solid var(--teal); background: #eaf4f3; font-size: 12px; }
+.run-state span { color: var(--muted); }
+.run-state.fail { border-left-color: var(--coral); background: var(--coral-soft); }
+.run-state.fail strong { color: var(--coral); }
 .empty-band { padding: 24px 15px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); color: var(--muted); font-size: 12px; }
 .summary-result { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 5px; background: white; }
 .summary-result > div { display: grid; gap: 6px; padding: 14px; border-right: 1px solid var(--line); }
@@ -145,6 +149,10 @@ textarea { resize: vertical; line-height: 1.5; }
 .case-table td { padding: 12px 13px; border-bottom: 1px solid #e9edef; font-size: 12px; vertical-align: top; }
 .case-table tr:last-child td { border-bottom: 0; }
 .case-table td:first-child { font-weight: 800; white-space: nowrap; }
+.detail-table td:nth-child(2) { font-variant-numeric: tabular-nums; font-weight: 800; white-space: nowrap; }
+.detail-table td:nth-child(3) { color: var(--muted); }
+.threshold-pass { color: var(--green); font-weight: 800; }
+.threshold-fail { color: var(--coral); font-weight: 800; }
 
 .form-surface { max-width: 770px; padding: 22px; border: 1px solid var(--line); border-radius: 6px; background: white; }
 .form-surface label { margin-bottom: 15px; }
@@ -243,6 +251,15 @@ textarea { resize: vertical; line-height: 1.5; }
   .summary-result > div { border-top: 1px solid var(--line); }
   .summary-result > div:nth-child(2n) { border-right: 0; }
   .summary-result > div:nth-child(-n+2) { border-top: 0; }
+  .detail-table, .threshold-table, .detail-table tbody, .threshold-table tbody { display: block; width: 100%; min-width: 0; }
+  .detail-table thead, .threshold-table thead { display: none; }
+  .detail-table tr, .threshold-table tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; border-bottom: 1px solid var(--line); }
+  .detail-table tr:last-child, .threshold-table tr:last-child { border-bottom: 0; }
+  .detail-table td, .threshold-table td { min-width: 0; padding: 7px 11px; border: 0; white-space: normal; }
+  .detail-table td:nth-child(2) { text-align: right; white-space: normal; }
+  .detail-table td:nth-child(3), .threshold-table td:nth-child(3) { grid-column: 1 / -1; padding-top: 0; }
+  .threshold-table td:nth-child(2) { text-align: right; }
+  .threshold-table td:nth-child(4) { grid-column: 1 / -1; padding-top: 0; }
   .form-grid { grid-template-columns: 1fr; }
   .form-surface { padding: 17px; }
   .steps span { min-width: 0; flex: 1; padding-inline: 5px; font-size: 11px; }

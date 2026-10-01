@@ -9,13 +9,13 @@ Each group member can run an independent local copy. See the [step-by-step Vietn
 1. On this GitHub page, choose **Code > Download ZIP**, then extract it (or clone the repo).
 2. Install Node.js 20+ and, for real performance runs, Grafana k6. Verify `node -v`, `npm -v`, and `k6 version` in a new terminal.
 3. Double-click `start-windows.cmd`. It installs project dependencies on first use and starts the local site. Open <http://localhost:4173> and keep that terminal open.
-4. Double-click `run-performance-windows.cmd` and choose **5** to run Stress, Spike, and Soak sequentially on your own computer. Import your own new JSON files from `results/` using **Open summary**.
+4. On the local Performance page, choose Stress, Spike or Soak and click **Run local k6**. Wait for the detailed result to appear, then repeat for the other scenarios. Use `run-performance-windows.cmd` only if you also want JSON evidence in `results/`.
 
 If Node.js is missing or older than 20, install [Node.js 20+](https://nodejs.org/en/download), reopen the terminal, and try again. Other desktop platforms can run `npm ci` then `npm start`. A visitor to a hosted copy only needs a browser. The core lab needs no database, account or paid service; Gemini is optional and requires a server-side API key.
 
 ## What to click
 
-- **Performance:** choose Load, Stress, Spike or Soak; inspect the planned VU curve and limits. **Run probe** sends only one request. For actual load, run the displayed `npm run perf:...` command on your own computer. Open the resulting JSON from `results/` with **Open summary** to compare overall and per-phase results. The file is parsed in your browser, not uploaded.
+- **Performance:** choose Load, Stress, Spike or Soak; inspect the planned VU curve and limits. **Run local k6** generates real load on your own computer and updates detailed results on this page automatically after each run. **Run probe** sends only one request. **Open summary** remains available for older JSON results.
 - **Unit:** edit latency, error rate and thresholds; compare pass, boundary and invalid results.
 - **API:** send preset valid/invalid requests and inspect HTTP status and JSON.
 - **Web E2E:** create, review and save a test plan through the real UI and API.
@@ -39,7 +39,7 @@ npm run test:visual
 
 ## Run real performance tests
 
-Install [Grafana k6](https://grafana.com/docs/k6/latest/set-up/install-k6/) on the **load generator** computer. Start this app locally in one terminal. In a second terminal, run one scenario at a time:
+Install [Grafana k6](https://grafana.com/docs/k6/latest/set-up/install-k6/) on the **load generator** computer. Start this app locally and click **Run local k6** for each scenario. The latest completed result, including request counts, HTTP status counts, latency percentiles, phase measurements and threshold decisions, appears below the button. A new run clears the previous result while it is in progress. Browser-started summaries are held in the local server's memory and are lost on restart; use screenshots for evidence or run the commands below if you need saved JSON files. In a second terminal, the equivalent commands are:
 
 ```bash
 npm run perf:load
@@ -48,9 +48,9 @@ npm run perf:spike
 npm run perf:soak
 ```
 
-For a larger **local-only** run, change **Local peak VUs** on the Performance page and copy its command, for example `npm run perf:stress -- --vus 120`. The supported range is 1–200 VUs (5–200 for Spike). The chart updates to the selected profile; the web page itself never starts k6. Run one scenario at a time and watch your computer's CPU. More VUs do not guarantee a high p95: the 24-job admission cap can return fast HTTP 503s, making the **error-rate** threshold fail while latency remains below its limit. Import the generated JSON to see the separate p95 and error verdicts.
+For a larger **local-only** run, change **Local peak VUs** on the Performance page and click **Run local k6**, or copy its command, for example `npm run perf:stress -- --vus 120`. The supported range is 1–200 VUs (5–200 for Spike). Run one scenario at a time and watch your computer's CPU. More VUs do not guarantee a high p95: the 24-job admission cap can return fast HTTP 503s, making the **error-rate** threshold fail while latency remains below its limit.
 
-The wrapper checks k6 and the target before starting, and saves a JSON summary to `results/`. If k6 is installed as a portable executable, set `K6_BIN` to its full path. A crossed threshold makes k6 exit nonzero; this is test evidence, not necessarily a broken script. The default target is `127.0.0.1:4173`. Remote load is blocked unless the operator explicitly allows it with `ALLOW_REMOTE_LOAD=1`. **Do not stress-test a public/shared host without permission.** Local runs avoid hosting cost; CI never runs the load scripts.
+The command-line wrapper checks k6 and the target before starting, and saves a JSON summary to `results/`; the web button does not create a lasting file. If k6 is installed as a portable executable, set `K6_BIN` to its full path before starting the local server. A crossed threshold makes k6 exit nonzero but its measurements still appear on the page. The default target is `127.0.0.1:4173`. Remote load is blocked unless the operator explicitly allows it with `ALLOW_REMOTE_LOAD=1`. **Do not stress-test a public/shared host without permission.** The web button is disabled on a production host; local runs avoid hosting cost, and CI never runs the load scripts.
 
 The target performs real asynchronous PBKDF2 work and caps concurrent jobs at 24, returning HTTP 503 above capacity. k6 records real response times, error rates, request counts and phase comparisons. The API reports actual Node heap usage, not a simulated memory value. An overall threshold can pass even when some requests fail; inspect the phase table too. These short, single-machine tests illustrate methods, not production capacity. See [performance methodology and caveats](docs/performance.md).
 
@@ -64,6 +64,7 @@ To enable Gemini on Render, set `GEMINI_API_KEY` and a long `AI_DEMO_ACCESS_CODE
 
 - `src/app.js`: HTTP API, real workload and telemetry
 - `src/domain/perf-scenarios.js`: shared scenario definitions
+- `src/domain/local-perf-runner.js`: local-only browser-started k6 runs and latest result
 - `src/cli/run-k6.js` and `k6/`: local load runner and phase metrics
 - `public/`: browser workspace and pure rules shared with the server
 - `tests/`: unit, API, E2E and visual checks
