@@ -42,6 +42,51 @@ let latestAutoStatus = null;
 let manualSummary = false;
 let autoIdAtImport = null;
 let latestPollPending = false;
+const localPage = ["localhost", "127.0.0.1"].includes(location.hostname);
+const bridgeBase = "http://127.0.0.1:4173/local-bridge";
+let bridgeCode = "";
+let bridgeConnected = false;
+let aiMode = "group";
+let aiDraftReady = false;
+
+function createEvidence(topic, afterId, description) {
+  const section = document.createElement("section");
+  section.className = "evidence-panel";
+  section.setAttribute("aria-label", `${topicNames[topic]} measured evidence`);
+  const heading = document.createElement("h2");
+  heading.textContent = "Measured result";
+  const note = document.createElement("p");
+  note.textContent = description;
+  const grid = document.createElement("div");
+  grid.className = "evidence-grid";
+  const verdict = document.createElement("div");
+  verdict.className = "result-line";
+  verdict.setAttribute("role", "status");
+  verdict.textContent = "NOT RUN · Run the check above to see measured values.";
+  section.append(heading, note, grid, verdict);
+  (byId(afterId) || document.querySelector(`.${afterId}`)).after(section);
+  return (metrics, message, status = "") => {
+    grid.replaceChildren(...metrics.map(([label, value]) => {
+      const cell = document.createElement("div");
+      const title = document.createElement("span");
+      const number = document.createElement("strong");
+      title.textContent = label;
+      number.textContent = String(value);
+      cell.append(title, number);
+      return cell;
+    }));
+    verdict.className = `result-line ${status}`;
+    verdict.textContent = message;
+  };
+}
+
+const showUnitEvidence = createEvidence("unit", "unit-form", "Function output; p95 and errors must both be strictly below their limits.");
+const showApiEvidence = createEvidence("api", "api-grid", "HTTP status and response contract are checked against the selected request.");
+const showE2eEvidence = createEvidence("e2e", "plan-step-3", "The UI flow passes after valid input is saved and the same plan is retrieved.");
+const showMobileEvidence = createEvidence("mobile", "mobile-measure", "This browser checks page-level overflow. Touch and full workflow need a mobile device or Playwright.");
+const showVisualEvidence = createEvidence("visual", "visual-specimen", "Live DOM-style comparison, not a Playwright screenshot diff.");
+const showAiEvidence = createEvidence("ai", "ai-result-wrap", "A generated draft is not a passing test; review and execution are separate.");
+const showCiEvidence = createEvidence("ci", "pipeline", "Latest public GitHub Actions run; check the linked run for individual test failures.");
 
 function toast(message, error = false) {
   const node = document.createElement("div");
@@ -71,6 +116,7 @@ function showTopic(topic) {
   byId("current-topic").textContent = topicNames[topic];
   if (topic === "mobile") measureMobile();
   if (topic === "performance") { pollTelemetry(); pollLatestRun(); }
+  if (topic === "ci") loadCiStatus();
 }
 
 function navigate(topic) {
@@ -189,7 +235,9 @@ function updatePeak() {
 async function pollTelemetry() {
   if (!scenarios || document.hidden || !byId("view-performance").classList.contains("active")) return;
   try {
-    const response = await fetch("/api/perf/metrics", { cache: "no-store" });
+    const response = await fetch(bridgeConnected ? `${bridgeBase}/metrics` : "/api/perf/metrics", {
+      cache: "no-store", headers: bridgeConnected ? { "X-QA-Bridge-Code": bridgeCode } : {},
+    });
     if (!response.ok) throw new Error("Telemetry unavailable");
     const data = await response.json();
     byId("metric-active").textContent = data.active;
@@ -198,7 +246,7 @@ async function pollTelemetry() {
     byId("metric-rejected").textContent = data.rejected.toLocaleString();
     byId("metric-p95").textContent = data.p95Ms === null ? "–" : `${data.p95Ms.toFixed(0)} ms`;
     byId("metric-heap").textContent = `${data.heapUsedMb.toFixed(1)} MB`;
-    byId("telemetry-updated").textContent = `Node process · ${new Date().toLocaleTimeString()}`;
+    byId("telemetry-updated").textContent = `${bridgeConnected ? "Local" : "Current site"} Node process · ${new Date().toLocaleTimeString()}`;
     heapHistory.push(data.heapUsedMb);
     if (heapHistory.length > 42) heapHistory.shift();
     drawHeapChart();
@@ -232,7 +280,9 @@ async function runProbe() {
   result.textContent = "Running one request…";
   const started = performance.now();
   try {
-    const response = await fetch(`/api/perf/work?work=${work}`, { cache: "no-store" });
+    const response = await fetch(bridgeConnected ? `${bridgeBase}/probe?work=${work}` : `/api/perf/work?work=${work}`, {
+      cache: "no-store", headers: bridgeConnected ? { "X-QA-Bridge-Code": bridgeCode } : {},
+    });
     const body = await response.json();
     const elapsed = Math.round(performance.now() - started);
     result.className = `result-line ${response.ok ? "pass" : "fail"}`;
@@ -271,6 +321,9 @@ function clearSummary() {
   byId("summary-detail").hidden = true;
   byId("phase-section").hidden = true;
   byId("summary-message").textContent = "";
+  byId("perf-outcome").className = "outcome-bar";
+  byId("perf-outcome-title").textContent = "No completed k6 result";
+  byId("perf-outcome-detail").textContent = "Waiting for measured p95, error rate, request count and threshold decisions.";
 }
 
 function renderSummary(summary, profile, source = {}) {
@@ -300,6 +353,10 @@ function renderSummary(summary, profile, source = {}) {
   byId("summary-heap").textContent = Number.isFinite(heapMin) && Number.isFinite(heapMax) ? `${heapMin.toFixed(1)}–${heapMax.toFixed(1)} MB` : "–";
   byId("summary-verdict").textContent = verdict.passed ? "WITHIN LIMITS" : "LIMIT BREACHED";
   byId("summary-verdict").parentElement.className = `summary-verdict ${verdict.passed ? "pass" : "fail"}`;
+  byId("perf-outcome").className = `outcome-bar ${verdict.passed ? "pass" : "fail"}`;
+  const sourceKind = source.label?.startsWith("Latest saved run") ? "SAVED RESULT" : source.label?.startsWith("Opened") ? "IMPORTED RESULT" : "LATEST RUN";
+  byId("perf-outcome-title").textContent = `${sourceKind} · ${verdict.passed ? "PASS" : "FAIL"}`;
+  byId("perf-outcome-detail").textContent = `${config.label} · ${requests.toLocaleString()} requests · p95 ${p95.toFixed(0)} / ${config.p95LimitMs} ms · errors ${(errorRate * 100).toFixed(1)} / ${(config.errorLimit * 100).toFixed(0)}% · ${readableTime(source.finishedAt)}`;
   byId("summary-empty").hidden = true;
   byId("summary-result").hidden = false;
 
@@ -387,16 +444,19 @@ async function pollLatestRun() {
   if (!scenarios || latestPollPending || document.hidden || !byId("view-performance").classList.contains("active")) return;
   latestPollPending = true;
   try {
-    const response = await fetch("/api/perf/runs/latest", { cache: "no-store" });
+    const response = await fetch(bridgeConnected ? `${bridgeBase}/runs/latest` : "/api/perf/runs/latest", {
+      cache: "no-store",
+      headers: bridgeConnected ? { "X-QA-Bridge-Code": bridgeCode } : {},
+    });
     if (!response.ok) throw new Error("Local run status unavailable.");
     const data = await response.json();
     localK6Ready = data.canRun;
     runActive = data.run?.status === "running";
     const availability = byId("run-availability");
-    availability.textContent = data.canRun ? "Run k6 here on this computer; the latest result appears automatically."
+    availability.textContent = data.canRun ? "Run k6 on this computer; the latest result appears automatically."
       : data.reason === "hosted" ? "Hosted view: run k6 on a local QA Lab copy, or open a summary."
         : "k6 is missing. Install Grafana k6, then restart QA Lab.";
-    byId("k6-install").hidden = data.canRun || data.reason === "hosted";
+    byId("k6-install").hidden = data.canRun || (data.reason === "hosted" && !bridgeConnected);
     updatePeak();
     const run = data.run;
     if (!run || runStartPending) return;
@@ -407,6 +467,8 @@ async function pollLatestRun() {
     latestAutoStatus = run.status;
     if (run.status === "running") {
       clearSummary();
+      byId("perf-outcome-title").textContent = "k6 test running";
+      byId("perf-outcome-detail").textContent = `${run.scenario.toUpperCase()} · ${run.peakVus} peak VUs · results will appear when this run completes. Counters above are server-wide.`;
       showRunState(`${run.scenario.toUpperCase()} test running`, `${run.peakVus} VUs peak · started ${readableTime(run.startedAt)} · live server counters above`);
     } else if (run.status === "complete") {
       try {
@@ -414,17 +476,21 @@ async function pollLatestRun() {
           label: run.source === "saved" ? `Latest saved run: ${run.filename}` : "Latest local k6 run",
           finishedAt: run.finishedAt,
         });
-        showRunState("Latest test completed", `${run.scenario.toUpperCase()} · ${readableTime(run.finishedAt)} · result updated automatically`);
+        showRunState(run.source === "saved" ? "Saved k6 result loaded" : "Latest test completed", `${run.scenario.toUpperCase()} · ${readableTime(run.finishedAt)} · ${run.source === "saved" ? "saved file found on this computer" : "result updated automatically"}`);
       } catch (error) {
         clearSummary();
         showRunState("Invalid k6 result", error.message, true);
       }
     } else {
       clearSummary();
+      byId("perf-outcome").className = "outcome-bar fail";
+      byId("perf-outcome-title").textContent = "k6 run failed";
+      byId("perf-outcome-detail").textContent = run.message || "No valid summary was produced.";
       showRunState("k6 run failed", run.message || "No valid summary was produced. Check k6 installation and try again.", true);
     }
   } catch {
     localK6Ready = false;
+    bridgeConnected = false;
     byId("run-k6").disabled = true;
     byId("run-availability").textContent = "Could not check local k6. Reopen the local QA Lab page.";
     byId("k6-install").hidden = true;
@@ -444,11 +510,13 @@ async function startK6Run() {
   runStartPending = true;
   byId("run-k6").disabled = true;
   clearSummary();
+  byId("perf-outcome-title").textContent = "Starting k6 test";
+  byId("perf-outcome-detail").textContent = `${selectedScenario.toUpperCase()} · ${peakVus} peak VUs · waiting for measurements.`;
   showRunState("Starting local k6", `${selectedScenario.toUpperCase()} · ${peakVus} VUs peak`);
   try {
-    const response = await fetch("/api/perf/runs", {
+    const response = await fetch(bridgeConnected ? `${bridgeBase}/runs` : "/api/perf/runs", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(bridgeConnected ? { "X-QA-Bridge-Code": bridgeCode } : {}) },
       body: JSON.stringify({ scenario: selectedScenario, peakVus }),
     });
     const result = await response.json();
@@ -460,9 +528,41 @@ async function startK6Run() {
     manualSummary = true;
     autoIdAtImport = latestAutoId;
     showRunState("Could not start k6", error.message, true);
+    byId("perf-outcome").className = "outcome-bar fail";
+    byId("perf-outcome-title").textContent = "Could not start k6";
+    byId("perf-outcome-detail").textContent = error.message;
   } finally {
     runStartPending = false;
     await pollLatestRun();
+  }
+}
+
+async function connectLocalK6() {
+  const entered = byId("bridge-code").value.trim();
+  if (!entered) {
+    byId("bridge-status").textContent = "Enter the pairing code shown in the local QA Lab window.";
+    return;
+  }
+  byId("bridge-connect").disabled = true;
+  byId("bridge-status").textContent = "Connecting to this computer...";
+  try {
+    const response = await fetch(`${bridgeBase}/status`, { cache: "no-store", headers: { "X-QA-Bridge-Code": entered } });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.message || "Connection rejected. Check the code and allowed site origin.");
+    bridgeCode = entered;
+    bridgeConnected = true;
+    byId("bridge-code").value = "";
+    byId("bridge-status").textContent = result.canRun ? "Connected. k6, live counters and probe use this computer." : "Connected, but k6 is missing. Install it and restart QA Lab.";
+    latestAutoId = null;
+    latestAutoStatus = null;
+    await pollLatestRun();
+    await pollTelemetry();
+  } catch (error) {
+    bridgeConnected = false;
+    localK6Ready = false;
+    byId("bridge-status").textContent = `Could not connect: ${error.message}. Start QA Lab and check the browser's local-network permission.`;
+  } finally {
+    byId("bridge-connect").disabled = false;
   }
 }
 
@@ -477,6 +577,11 @@ function runUnit(event) {
   const target = byId("unit-result");
   target.className = `result-line ${result.valid && result.passed ? "pass" : "fail"}`;
   target.textContent = !result.valid ? Object.values(result.errors).join(" ") : result.passed ? "PASS · latency and error rate are both below their limits." : `FAIL · ${result.checks.latencyPassed ? "latency passes" : "latency breaches"}; ${result.checks.errorsPassed ? "errors pass" : "errors breach"}.`;
+  showUnitEvidence([
+    ["p95 observed / limit", `${byId("unit-p95").value} / ${byId("unit-p95-limit").value} ms`],
+    ["Errors observed / limit", `${byId("unit-errors").value} / ${byId("unit-error-limit").value}%`],
+    ["Rules passed", result.valid ? `${Number(result.checks.latencyPassed) + Number(result.checks.errorsPassed)} / 2` : "Invalid input"],
+  ], !result.valid ? "INVALID · Input does not meet the metric contract." : result.passed ? "PASS · Both strict threshold checks passed." : "FAIL · One or both thresholds were reached or exceeded.", result.valid && result.passed ? "pass" : "fail");
 }
 
 function updateApiPreset() {
@@ -495,11 +600,23 @@ async function sendApiRequest() {
     const body = await response.text();
     byId("api-response-status").textContent = `HTTP ${response.status}`;
     byId("api-response-time").textContent = `${Math.round(performance.now() - started)} ms`;
-    try { byId("api-response").textContent = JSON.stringify(JSON.parse(body), null, 2); }
+    let parsed;
+    try { parsed = JSON.parse(body); byId("api-response").textContent = JSON.stringify(parsed, null, 2); }
     catch { byId("api-response").textContent = body; }
+    const expectedStatus = { health: 200, metrics: 200, evaluate: 200, invalid: 400, missing: 404 }[byId("api-preset").value];
+    const contract = {
+      health: parsed?.service === "qa-lab" && parsed?.status === "ready",
+      metrics: Number.isFinite(parsed?.completed) && Number.isFinite(parsed?.capacity),
+      evaluate: typeof parsed?.passed === "boolean" && parsed?.valid === true,
+      invalid: Boolean(parsed?.fields?.p95Ms),
+      missing: parsed?.error === "not_found",
+    }[byId("api-preset").value];
+    const passed = response.status === expectedStatus && contract;
+    showApiEvidence([["HTTP observed / expected", `${response.status} / ${expectedStatus}`], ["Response time", byId("api-response-time").textContent], ["JSON contract", contract ? "Matched" : "Mismatch"]], `${passed ? "PASS" : "FAIL"} · Status and required response fields ${passed ? "matched" : "did not match"}.`, passed ? "pass" : "fail");
   } catch (error) {
     byId("api-response-status").textContent = "Request failed";
     byId("api-response").textContent = error.message;
+    showApiEvidence([["HTTP status", "No response"], ["Response time", "–"], ["JSON contract", "Not checked"]], "FAIL · The request did not complete.", "fail");
   }
 }
 
@@ -518,7 +635,11 @@ function reviewPlan(event) {
   event.preventDefault();
   const result = validatePlan(planPayload());
   for (const field of ["name", "scenario", "targetVus", "notes"]) byId(`plan-error-${field}`).textContent = result.errors[field] || "";
-  if (!result.valid) return;
+  if (!result.valid) {
+    showE2eEvidence([["Valid fields", `${4 - Object.keys(result.errors).length} / 4`], ["Save response", "Not sent"], ["Retrieved plan", "Not checked"]], "FAIL · Fix the highlighted input before saving.", "fail");
+    return;
+  }
+  showE2eEvidence([["Valid fields", "4 / 4"], ["Save response", "Not sent"], ["Retrieved plan", "Not checked"]], "VALIDATED · Continue to Save plan; the end-to-end check is not complete yet.");
   const labels = { name: "Plan name", scenario: "Scenario", targetVus: "Peak users", notes: "Notes" };
   byId("plan-review").replaceChildren(...Object.entries(result.value).map(([key, value]) => {
     const row = document.createElement("div");
@@ -540,11 +661,15 @@ async function savePlan() {
     if (!response.ok) throw new Error(Object.values(body.fields || {}).join(" ") || "Plan could not be saved.");
     const verify = await fetch(`/api/plans/${body.plan.id}`);
     if (!verify.ok) throw new Error("Saved plan could not be retrieved.");
+    const saved = (await verify.json()).plan;
+    if (saved?.name !== body.plan.name || saved?.scenario !== body.plan.scenario || saved?.targetVus !== body.plan.targetVus) throw new Error("Retrieved plan does not match what was saved.");
     byId("plan-saved-copy").textContent = `${body.plan.name} · ${body.plan.scenario} · ${body.plan.targetVus} VUs`;
     byId("plan-saved-id").textContent = body.plan.id;
     showPlanStep(3);
+    showE2eEvidence([["Valid fields", "4 / 4"], ["Save response", `HTTP ${response.status}`], ["Retrieved plan", "Matched ID + fields"]], "PASS · The plan was saved and retrieved through the UI/API flow.", "pass");
   } catch (error) {
     byId("plan-save-error").textContent = error.message;
+    showE2eEvidence([["Valid fields", "4 / 4"], ["Save response", "Failed"], ["Retrieved plan", "Not verified"]], `FAIL · ${error.message}`, "fail");
   }
 }
 
@@ -556,11 +681,18 @@ function measureMobile() {
   byId("mobile-touch").textContent = navigator.maxTouchPoints > 0 ? "Available" : "Not detected";
   byId("mobile-overflow").textContent = content > width ? "Detected" : "None";
   byId("mobile-overflow").style.color = content > width ? "var(--coral)" : "var(--green)";
+  const overflow = Math.max(0, content - width);
+  showMobileEvidence([["Viewport", `${width} px`], ["Horizontal overflow", `${overflow} px`], ["Allowed overflow", "0 px"]], `${overflow ? "FAIL" : "PASS"} · Page-level layout at this viewport. This does not certify touch or native mobile behavior.`, overflow ? "fail" : "pass");
 }
 
 function setVisualVariant(variant) {
   document.querySelectorAll("[data-visual]").forEach((button) => button.classList.toggle("selected", button.dataset.visual === variant));
   byId("visual-specimen").classList.toggle("shifted", variant === "shifted");
+  const heading = byId("visual-specimen").querySelector(".specimen-heading");
+  const transform = getComputedStyle(heading).transform;
+  const shift = transform === "none" ? 0 : Math.round(new DOMMatrixReadOnly(transform).m41);
+  const changes = Number(shift !== 0) + Number(variant === "shifted");
+  showVisualEvidence([["Heading shift", `${shift} px`], ["Style differences", String(changes)], ["Allowed shift", "0 px"]], `${changes ? "FAIL" : "PASS"} · ${changes ? "Preview style differs" : "Preview style matches"}. Run Playwright for the actual screenshot assertion.`, changes ? "fail" : "pass");
 }
 
 function buildAiPrompt() {
@@ -582,23 +714,71 @@ async function loadAiStatus() {
     const status = await response.json();
     aiReady = status.available;
     aiRequiresCode = status.requiresCode;
-    byId("ai-access-wrap").hidden = !aiRequiresCode;
-    byId("ai-generate").disabled = !aiReady;
+    const option = byId("ai-model").querySelector("option");
+    option.value = status.model || "gemini-3.5-flash-lite";
+    option.textContent = status.model || "Default model";
+    updateAiMode();
     byId("ai-status").textContent = aiReady
       ? `Gemini ready (${status.model}). Up to 20 requests per hour on this server.`
       : status.reason === "missing_access_code"
-        ? "Gemini needs a group access code configured by the site owner. Prompt builder still works."
-        : "Gemini is not configured on this server. Prompt builder still works.";
+        ? "Group API needs an owner access code. You can use your own API key instead."
+        : "Group API is not configured. You can use your own API key instead.";
   } catch {
     byId("ai-generate").disabled = true;
     byId("ai-status").textContent = "Could not check Gemini status. Prompt builder still works.";
   }
 }
 
+function updateAiMode() {
+  byId("ai-mode-group").classList.toggle("selected", aiMode === "group");
+  byId("ai-mode-personal").classList.toggle("selected", aiMode === "personal");
+  byId("ai-access-wrap").hidden = aiMode !== "group" || !aiRequiresCode;
+  byId("ai-personal-wrap").hidden = aiMode !== "personal";
+  byId("ai-generate").disabled = aiMode === "group" ? !aiReady : !byId("ai-personal-key").value.trim();
+}
+
+function aiCredentials() {
+  return aiMode === "personal"
+    ? { mode: "personal", apiKey: byId("ai-personal-key").value.trim() }
+    : { mode: "group", accessCode: byId("ai-access-code").value };
+}
+
+async function loadAiModels() {
+  if (aiMode === "personal" && !byId("ai-personal-key").value.trim()) {
+    byId("ai-status").textContent = "Enter your API key first.";
+    return;
+  }
+  if (aiMode === "group" && (!aiReady || (aiRequiresCode && !byId("ai-access-code").value))) {
+    byId("ai-status").textContent = "Enter the group access code first.";
+    return;
+  }
+  byId("ai-load-models").disabled = true;
+  byId("ai-status").textContent = "Loading available Gemini models...";
+  try {
+    const response = await fetch("/api/ai/models", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(aiCredentials()) });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || "Could not load models.");
+    if (!data.models.length) throw new Error("No text generation models were returned for this key.");
+    const previous = byId("ai-model").value;
+    byId("ai-model").replaceChildren(...data.models.map((model) => {
+      const option = document.createElement("option");
+      option.value = model.id;
+      option.textContent = `${model.label} (${model.id})`;
+      return option;
+    }));
+    if (data.models.some((model) => model.id === previous)) byId("ai-model").value = previous;
+    byId("ai-status").textContent = `${data.models.length} available Gemini models loaded. Choose one, then generate.`;
+  } catch (error) {
+    byId("ai-status").textContent = error.message;
+  } finally {
+    byId("ai-load-models").disabled = false;
+  }
+}
+
 async function generateAiCases() {
-  if (!aiReady || !buildAiPrompt()) return;
+  if ((aiMode === "group" && !aiReady) || !buildAiPrompt()) return;
   const accessCode = byId("ai-access-code").value;
-  if (aiRequiresCode && !accessCode) {
+  if (aiMode === "group" && aiRequiresCode && !accessCode) {
     byId("ai-status").textContent = "Enter the group access code to generate test cases.";
     byId("ai-access-code").focus();
     return;
@@ -611,18 +791,42 @@ async function generateAiCases() {
     const response = await fetch("/api/ai/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ topic: byId("ai-topic").value, requirement: byId("ai-requirement").value.trim(), accessCode }),
+      body: JSON.stringify({ topic: byId("ai-topic").value, requirement: byId("ai-requirement").value.trim(), model: byId("ai-model").value, ...aiCredentials() }),
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.message || "Gemini request failed.");
     byId("ai-result").textContent = result.text;
     byId("ai-result-wrap").hidden = false;
+    aiDraftReady = true;
+    updateAiEvidence();
     byId("ai-status").textContent = "Draft ready. Check its assertions and run the test before reporting a pass.";
   } catch (error) {
     byId("ai-status").textContent = error.message || "Gemini request failed.";
     toast(byId("ai-status").textContent, true);
   } finally {
-    button.disabled = !aiReady;
+    updateAiMode();
+  }
+}
+
+function updateAiEvidence() {
+  const checks = [...byId("view-ai").querySelectorAll(".checklist input")];
+  const reviewed = checks.filter((box) => box.checked).length;
+  const done = aiDraftReady && reviewed === checks.length;
+  showAiEvidence([["Draft generated", aiDraftReady ? "Yes" : "No"], ["Review checks", `${reviewed} / ${checks.length}`], ["Model", byId("ai-model").value]], done ? "REVIEW COMPLETE · Confirm actual test results separately; this is not an automated pass." : "NOT VERIFIED · AI output needs human review and a real test run.", done ? "pass" : "");
+}
+
+async function loadCiStatus() {
+  showCiEvidence([["Latest run", "Loading"], ["State", "Checking"], ["Updated", "–"]], "Checking the latest public GitHub Actions run...");
+  try {
+    const response = await fetch("https://api.github.com/repos/ZoeChan189/qa-playground/actions/runs?per_page=1", { headers: { Accept: "application/vnd.github+json" }, cache: "no-store", signal: AbortSignal.timeout(10_000) });
+    if (!response.ok) throw new Error("GitHub Actions status unavailable");
+    const run = (await response.json()).workflow_runs?.[0];
+    if (!run) throw new Error("No workflow run found");
+    const status = run.status === "completed" ? run.conclusion : run.status;
+    const decision = status === "success" ? "PASS" : ["failure", "cancelled", "timed_out"].includes(status) ? "FAIL" : "PENDING";
+    showCiEvidence([["Latest run", `#${run.run_number}`], ["State", status], ["Updated", readableTime(run.updated_at)]], `${decision} · ${run.name}. Open Actions for job-by-job results.`, decision === "PASS" ? "pass" : decision === "FAIL" ? "fail" : "");
+  } catch (error) {
+    showCiEvidence([["Latest run", "Unavailable"], ["State", "Unknown"], ["Updated", "–"]], `${error.message}. Open Actions for the authoritative result.`);
   }
 }
 
@@ -633,6 +837,7 @@ byId("copy-perf-command").addEventListener("click", () => copyText(byId("perf-co
 byId("perf-vus").addEventListener("input", updatePeak);
 byId("run-probe").addEventListener("click", runProbe);
 byId("run-k6").addEventListener("click", startK6Run);
+byId("bridge-connect").addEventListener("click", connectLocalK6);
 byId("summary-file").addEventListener("change", (event) => { importSummary(event.target.files[0]); event.target.value = ""; });
 byId("unit-form").addEventListener("submit", runUnit);
 byId("api-preset").addEventListener("change", updateApiPreset);
@@ -647,11 +852,20 @@ byId("ai-build").addEventListener("click", buildAiPrompt);
 byId("ai-copy").addEventListener("click", () => { if (buildAiPrompt()) copyText(byId("ai-output").value); });
 byId("ai-generate").addEventListener("click", generateAiCases);
 byId("ai-copy-result").addEventListener("click", () => copyText(byId("ai-result").textContent));
+byId("ai-mode-group").addEventListener("click", () => { aiMode = "group"; updateAiMode(); });
+byId("ai-mode-personal").addEventListener("click", () => { aiMode = "personal"; updateAiMode(); });
+byId("ai-personal-key").addEventListener("input", updateAiMode);
+byId("ai-load-models").addEventListener("click", loadAiModels);
+byId("ai-model").addEventListener("change", updateAiEvidence);
+byId("view-ai").querySelectorAll(".checklist input").forEach((box) => box.addEventListener("change", updateAiEvidence));
 window.addEventListener("hashchange", syncRoute);
 window.addEventListener("resize", () => { if (byId("view-mobile").classList.contains("active")) measureMobile(); });
 
 updateApiPreset();
 buildAiPrompt();
+byId("bridge-controls").hidden = localPage;
+setVisualVariant("baseline");
+updateAiEvidence();
 loadAiStatus();
 checkHealth();
 try {

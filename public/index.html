@@ -41,6 +41,7 @@
               <div><span>Node heap</span><strong id="metric-heap">–</strong><small>actual process memory</small></div>
             </div>
 
+            <div id="perf-outcome" class="outcome-bar" role="status"><strong id="perf-outcome-title">No k6 result yet</strong><span id="perf-outcome-detail">Run a local test to compare measured p95 and error rate with this scenario's limits.</span></div>
             <div class="section-bar"><div><h2>Load profile</h2><p>Planned virtual users, not measured throughput</p></div><div class="segmented" role="group" aria-label="Performance scenario"><button type="button" data-scenario="load">Load</button><button type="button" data-scenario="stress" class="selected">Stress</button><button type="button" data-scenario="spike">Spike</button><button type="button" data-scenario="soak">Soak</button></div></div>
             <div class="profile-layout">
               <div class="chart-area"><div class="chart-topline"><strong id="chart-title">Stress: ramp to capacity</strong><span id="chart-duration">34 seconds</span></div><svg id="vu-chart" viewBox="0 0 760 245" role="img" aria-label="Planned virtual users over time"></svg><div class="chart-axis"><span>0 s</span><span id="chart-end">34 s</span></div></div>
@@ -53,6 +54,7 @@
             </div>
 
             <div class="section-bar spaced"><div><h2>k6 result analysis</h2><p id="run-availability">Checking local k6 availability</p><a id="k6-install" class="fine-print" href="https://grafana.com/docs/k6/latest/set-up/install-k6/" target="_blank" rel="noopener noreferrer" hidden>Install k6</a></div><div class="button-row"><button id="run-k6" class="button primary" type="button" disabled><img src="/icons/play.svg" alt="" />Run local k6</button><label class="button secondary file-button"><img src="/icons/upload.svg" alt="" />Open summary<input id="summary-file" type="file" accept=".json,application/json" disabled /></label></div></div>
+            <div id="bridge-controls" class="bridge-controls" hidden><label>Pairing code from local QA Lab window<input id="bridge-code" type="password" autocomplete="off" placeholder="Code shown after start-windows.cmd" /></label><button id="bridge-connect" class="button secondary" type="button">Connect this computer</button><span id="bridge-status" role="status">Start QA Lab on this computer first.</span></div>
             <div id="run-state" class="run-state" role="status" hidden><strong id="run-state-title"></strong><span id="run-state-detail"></span></div>
             <div id="summary-empty" class="empty-band">No completed k6 run on this computer. Run a local test or open a summary.</div>
             <div id="summary-result" class="summary-result" hidden><div><span>Scenario</span><strong id="summary-profile">–</strong></div><div><span>Requests</span><strong id="summary-requests">–</strong></div><div><span>p95</span><strong id="summary-p95">–</strong></div><div><span>Error rate</span><strong id="summary-errors">–</strong></div><div><span>Peak active</span><strong id="summary-active">–</strong></div><div><span>Heap range</span><strong id="summary-heap">–</strong></div><div class="summary-verdict"><span>Thresholds</span><strong id="summary-verdict">–</strong></div></div>
@@ -79,12 +81,15 @@
             <div class="form-surface">
               <label>Target topic<select id="ai-topic"><option value="performance">Performance</option><option value="api">API</option><option value="e2e">Web E2E</option><option value="unit">Unit</option><option value="mobile">Mobile web</option></select></label>
               <label>Requirement<textarea id="ai-requirement" rows="4" maxlength="500">The system should remain responsive as concurrent users increase, and recover after a sudden traffic spike.</textarea></label>
+              <div class="segmented ai-mode" role="group" aria-label="Gemini connection"><button id="ai-mode-group" type="button" class="selected">Group API</button><button id="ai-mode-personal" type="button">My API key</button></div>
               <label id="ai-access-wrap" hidden>Group access code<input id="ai-access-code" type="password" autocomplete="off" /></label>
+              <label id="ai-personal-wrap" hidden>My Gemini API key<input id="ai-personal-key" type="password" autocomplete="off" spellcheck="false" placeholder="Paste a key from Google AI Studio" /></label>
+              <div class="ai-model-row"><label>Gemini model<select id="ai-model"><option value="gemini-3.5-flash-lite">Default model</option></select></label><button id="ai-load-models" class="button secondary" type="button">Load models</button></div>
               <div class="button-row"><button id="ai-generate" class="button primary" type="button" disabled><img src="/icons/sparkles.svg" alt="" />Generate test cases</button><button id="ai-build" class="button secondary" type="button">Build prompt</button><button id="ai-copy" class="button secondary" type="button"><img src="/icons/copy.svg" alt="" />Copy prompt</button></div>
               <p id="ai-status" class="inline-message" role="status">Checking Gemini availability...</p>
               <div id="ai-result-wrap" hidden><div class="ai-result-heading"><strong>Gemini draft</strong><button id="ai-copy-result" class="button secondary" type="button"><img src="/icons/copy.svg" alt="" />Copy draft</button></div><pre id="ai-result" class="ai-result" tabindex="0"></pre></div>
               <label>Prompt for another AI tool<textarea id="ai-output" rows="9" readonly></textarea></label>
-              <p class="fine-print">Requirements are sent to Gemini only when you generate. Do not enter private data. AI suggestions are not test evidence.</p>
+              <p class="fine-print">A personal API key is used for this request only and is not saved. This is not Google account sign-in. Do not enter private data. AI suggestions are not test evidence.</p>
             </div>
             <div class="section-bar spaced"><h2>Review checklist</h2></div><div class="checklist"><label><input type="checkbox" /> Assertions match the real API contract</label><label><input type="checkbox" /> Boundary and failure paths are included</label><label><input type="checkbox" /> Generated code was run locally or in CI</label><label><input type="checkbox" /> Results were checked by a person</label></div>
           </section>

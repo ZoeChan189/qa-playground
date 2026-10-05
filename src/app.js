@@ -7,7 +7,7 @@ import path from "node:path";
 import { evaluateThresholds, percentile } from "../public/shared/evaluation.js";
 import { validatePlan } from "../public/shared/plan-rules.js";
 import { perfScenarios } from "./domain/perf-scenarios.js";
-import { aiTopics, generateAiCases } from "./domain/ai-assistant.js";
+import { aiTopics, generateAiCases, listGeminiModels, validGeminiModel } from "./domain/ai-assistant.js";
 import { createLocalPerfRunner } from "./domain/local-perf-runner.js";
 import { scenarioWithPeak } from "../public/shared/perf-profile.js";
 
@@ -57,7 +57,7 @@ function createTelemetry() {
   };
 }
 
-export function createApp({ aiFetch = fetch, perfRunner = createLocalPerfRunner() } = {}) {
+export function createApp({ aiFetch = fetch, perfRunner = createLocalPerfRunner(), bridgeCode = "", bridgeOrigin = "" } = {}) {
   const app = express();
   const telemetry = createTelemetry();
   const plans = new Map();
@@ -118,7 +118,39 @@ export function createApp({ aiFetch = fetch, perfRunner = createLocalPerfRunner(
     return response.status(result.status).json(result.ok ? { run: result.run } : { error: result.error, message: result.message });
   });
 
-  app.get("/api/perf/work", async (request, response, next) => {
+  if (bridgeCode && bridgeOrigin && process.env.NODE_ENV !== "production") {
+    app.use("/local-bridge", (request, response, next) => {
+      const origin = request.get("origin");
+      const host = request.get("host") || "";
+      const address = request.socket.remoteAddress || "";
+      if (origin !== bridgeOrigin || !/^(localhost|127\.0\.0\.1|\[::1\]):\d+$/.test(host)
+        || !/^(127\.0\.0\.1|::1|::ffff:127\.0\.0\.1)$/.test(address)) {
+        return response.status(403).json({ error: "bridge_forbidden" });
+      }
+      response.setHeader("Access-Control-Allow-Origin", bridgeOrigin);
+      response.setHeader("Vary", "Origin");
+      response.setHeader("Access-Control-Allow-Private-Network", "true");
+      response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+      response.setHeader("Access-Control-Allow-Headers", "Content-Type, X-QA-Bridge-Code");
+      if (request.method === "OPTIONS") return response.sendStatus(204);
+      if (request.get("x-qa-bridge-code") !== bridgeCode) return response.status(401).json({ error: "bridge_code_invalid", message: "Pairing code is incorrect." });
+      next();
+    });
+    app.get("/local-bridge/status", async (_request, response) => response.json(await perfRunner.latest()));
+    app.get("/local-bridge/runs/latest", async (_request, response) => response.json(await perfRunner.latest()));
+    app.get("/local-bridge/metrics", (_request, response) => response.json(telemetry.snapshot()));
+    app.get("/local-bridge/probe", perfWork);
+    app.post("/local-bridge/runs", (request, response) => {
+      const { scenario, peakVus } = request.body ?? {};
+      if (!perfScenarios[scenario]) return response.status(400).json({ error: "invalid_run", message: "Choose a valid scenario." });
+      try { scenarioWithPeak(scenario, perfScenarios[scenario], peakVus); }
+      catch (error) { return response.status(400).json({ error: "invalid_run", message: error.message }); }
+      const result = perfRunner.start(scenario, peakVus);
+      return response.status(result.status).json(result.ok ? { run: result.run } : { error: result.error, message: result.message });
+    });
+  }
+
+  async function perfWork(request, response, next) {
     const rawWork = String(request.query.work ?? "30");
     if (!/^\d{1,3}$/.test(rawWork) || Number(rawWork) < 1 || Number(rawWork) > 100) {
       return response.status(400).json({ error: "invalid_work", message: "work must be an integer from 1 to 100." });
@@ -157,7 +189,8 @@ export function createApp({ aiFetch = fetch, perfRunner = createLocalPerfRunner(
     } finally {
       telemetry.finish(started);
     }
-  });
+  }
+  app.get("/api/perf/work", perfWork);
 
   app.post("/api/evaluate", (request, response) => {
     const result = evaluateThresholds(request.body);
@@ -199,18 +232,37 @@ export function createApp({ aiFetch = fetch, perfRunner = createLocalPerfRunner(
       requiresCode: Boolean(aiAccessCode),
       reason: !aiKey ? "missing_key" : !aiAccessCode ? "missing_access_code" : null,
       model: aiAvailable ? aiModel : null,
+      personalKeySupported: true,
     });
   });
 
+  function aiCredentials(body) {
+    if (body?.mode === "personal") {
+      const key = body.apiKey;
+      if (typeof key !== "string" || key.length < 20 || key.length > 300 || /\s/.test(key)) return null;
+      return { key };
+    }
+    if (!aiAvailable || body?.accessCode !== aiAccessCode) return null;
+    return { key: aiKey };
+  }
+
+  app.post("/api/ai/models", async (request, response) => {
+    const credentials = aiCredentials(request.body);
+    if (!credentials) return response.status(403).json({ error: "ai_access_denied", message: "Enter a valid group code or personal API key." });
+    const result = await listGeminiModels({ apiKey: credentials.key, fetchImpl: aiFetch });
+    return response.status(result.ok ? 200 : result.status).json(result.ok ? { models: result.models } : { error: "model_list_failed", message: result.message });
+  });
+
   app.post("/api/ai/generate", async (request, response) => {
-    if (!aiAvailable) return response.status(503).json({ error: "ai_not_configured", message: "Gemini is not configured on this server." });
-    const { topic, requirement, accessCode } = request.body ?? {};
+    const { topic, requirement, model } = request.body ?? {};
     if (!aiTopics.has(topic) || typeof requirement !== "string" || requirement.trim().length < 10 || requirement.trim().length > 500) {
       return response.status(400).json({ error: "invalid_ai_request", message: "Choose a topic and enter a requirement of 10 to 500 characters." });
     }
-    if (aiAccessCode && accessCode !== aiAccessCode) {
-      return response.status(403).json({ error: "ai_access_denied", message: "The group access code is incorrect." });
-    }
+    if (request.body?.mode !== "personal" && !aiAvailable) return response.status(503).json({ error: "ai_not_configured", message: "Gemini is not configured on this server." });
+    const credentials = aiCredentials(request.body);
+    if (!credentials) return response.status(403).json({ error: "ai_access_denied", message: "Enter a valid group code or personal API key." });
+    const chosenModel = model || aiModel;
+    if (!validGeminiModel(chosenModel)) return response.status(400).json({ error: "invalid_model", message: "Choose a Gemini text model." });
     const now = Date.now();
     if (now - aiWindowStart >= 3_600_000) {
       aiWindowStart = now;
@@ -223,7 +275,7 @@ export function createApp({ aiFetch = fetch, perfRunner = createLocalPerfRunner(
     aiWindowCount += 1;
     aiInflight += 1;
     try {
-      const result = await generateAiCases({ topic, requirement: requirement.trim(), apiKey: aiKey, model: aiModel, fetchImpl: aiFetch });
+      const result = await generateAiCases({ topic, requirement: requirement.trim(), apiKey: credentials.key, model: chosenModel, fetchImpl: aiFetch });
       if (!result.ok) return response.status(result.status).json({ error: result.error, message: result.message });
       return response.json({ text: result.text, model: result.model });
     } finally {

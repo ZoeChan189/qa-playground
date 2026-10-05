@@ -25,6 +25,30 @@ describe("QA Lab API", () => {
     expect(perfRunner.start).toHaveBeenCalledTimes(1);
   });
 
+  it("pairs a hosted page with the loopback k6 bridge without exposing the code", async () => {
+    const perfRunner = {
+      latest: vi.fn().mockResolvedValue({ canRun: true, run: null }),
+      start: vi.fn().mockReturnValue({ ok: true, status: 202, run: { id: "bridge-run", status: "running" } }),
+    };
+    const bridge = createApp({ perfRunner, bridgeCode: "secret-pair-code", bridgeOrigin: "https://class.example" });
+    const headers = (call) => call.set("Host", "127.0.0.1:4173").set("Origin", "https://class.example");
+    const preflight = await headers(request(bridge).options("/local-bridge/status"))
+      .set("Access-Control-Request-Private-Network", "true");
+    expect(preflight.status).toBe(204);
+    expect(preflight.headers["access-control-allow-private-network"]).toBe("true");
+    expect((await headers(request(bridge).get("/local-bridge/status"))).status).toBe(401);
+    expect((await headers(request(bridge).get("/local-bridge/status")).set("X-QA-Bridge-Code", "secret-pair-code")).body.canRun).toBe(true);
+    expect((await headers(request(bridge).get("/local-bridge/metrics")).set("X-QA-Bridge-Code", "secret-pair-code")).body.capacity).toBe(24);
+    expect((await headers(request(bridge).get("/local-bridge/probe?work=1")).set("X-QA-Bridge-Code", "secret-pair-code")).body.iterations).toBe(1000);
+    expect((await request(bridge).get("/local-bridge/status").set("Host", "127.0.0.1:4173")
+      .set("Origin", "https://evil.example").set("X-QA-Bridge-Code", "secret-pair-code")).status).toBe(403);
+    expect((await headers(request(bridge).post("/local-bridge/runs")).set("X-QA-Bridge-Code", "secret-pair-code")
+      .send({ scenario: "spike", peakVus: 4 })).status).toBe(400);
+    expect((await headers(request(bridge).post("/local-bridge/runs")).set("X-QA-Bridge-Code", "secret-pair-code")
+      .send({ scenario: "stress", peakVus: 40 })).status).toBe(202);
+    expect(perfRunner.start).toHaveBeenCalledWith("stress", 40);
+  });
+
   it("exposes health, all four profiles and the case catalog", async () => {
     const health = await request(app).get("/api/health");
     expect(health.status).toBe(200);
@@ -125,11 +149,10 @@ describe("QA Lab API", () => {
     const aiFetch = vi.fn(async (_url, options) => {
       expect(options.headers["x-goog-api-key"]).toBe("test-key-not-real");
       const sent = JSON.parse(options.body);
-      expect(sent.store).toBe(false);
-      expect(sent.model).toBe("gemini-3.5-flash-lite");
-      expect(sent.input).toContain("equality fails");
+      expect(_url).toContain("/models/gemini-3.5-flash-lite:generateContent");
+      expect(sent.contents[0].parts[0].text).toContain("equality fails");
       expect(options.body).not.toContain("classroom-demo-code");
-      return new Response(JSON.stringify({ steps: [{ type: "model_output", content: [{ type: "text", text: "U01: equality fails" }] }] }), { status: 200 });
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "U01: equality fails" }] } }] }), { status: 200 });
     });
     const aiApp = createApp({ aiFetch });
     expect((await request(aiApp).get("/api/ai/status")).body).toMatchObject({ available: true, requiresCode: true });
@@ -156,12 +179,34 @@ describe("QA Lab API", () => {
     expect(quota.body.error).toBe("ai_quota");
     expect(JSON.stringify(quota.body)).not.toContain("private upstream detail");
 
-    const aiApp = createApp({ aiFetch: async () => new Response(JSON.stringify({ steps: [{ type: "model_output", content: [{ type: "text", text: "Draft" }] }] }), { status: 200 }) });
+    const aiApp = createApp({ aiFetch: async () => new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "Draft" }] } }] }), { status: 200 }) });
     for (let index = 0; index < 20; index += 1) {
       expect((await request(aiApp).post("/api/ai/generate").send(body)).status).toBe(200);
     }
     const limited = await request(aiApp).post("/api/ai/generate").send(body);
     expect(limited.status).toBe(429);
     expect(Number(limited.headers["retry-after"])).toBeGreaterThan(0);
+  });
+
+  it("accepts a personal key only for the request and lists available text models", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "");
+    vi.stubEnv("AI_DEMO_ACCESS_CODE", "");
+    const key = "personal-test-key-long-enough";
+    const aiFetch = vi.fn(async (url, options) => {
+      expect(options.headers["x-goog-api-key"]).toBe(key);
+      if (url.includes("/models?")) return new Response(JSON.stringify({ models: [
+        { name: "models/gemini-2.5-flash", displayName: "Gemini Flash", supportedGenerationMethods: ["generateContent"] },
+        { name: "models/text-embedding", supportedGenerationMethods: ["embedContent"] },
+      ] }), { status: 200 });
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "A test draft" }] } }] }), { status: 200 });
+    });
+    const personalApp = createApp({ aiFetch });
+    const models = await request(personalApp).post("/api/ai/models").send({ mode: "personal", apiKey: key });
+    expect(models.body.models).toEqual([{ id: "gemini-2.5-flash", label: "Gemini Flash" }]);
+    const result = await request(personalApp).post("/api/ai/generate").send({ mode: "personal", apiKey: key, model: "gemini-2.5-flash", topic: "api", requirement: "Check the health endpoint response." });
+    expect(result.status).toBe(200);
+    expect(result.body.model).toBe("gemini-2.5-flash");
+    expect(JSON.stringify(result.body)).not.toContain(key);
+    expect((await request(personalApp).post("/api/ai/generate").send({ mode: "personal", apiKey: "bad", model: "gemini-2.5-flash", topic: "api", requirement: "Check the health endpoint response." })).status).toBe(403);
   });
 });

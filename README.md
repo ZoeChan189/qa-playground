@@ -11,18 +11,18 @@ Each group member can run an independent local copy. See the [step-by-step Vietn
 3. Double-click `start-windows.cmd`. It installs project dependencies on first use and starts the local site. Open <http://localhost:4173> and keep that terminal open.
 4. On the local Performance page, choose Stress, Spike or Soak and click **Run local k6**. Wait for the detailed result to appear, then repeat for the other scenarios. Use `run-performance-windows.cmd` only if you also want JSON evidence in `results/`.
 
-If Node.js is missing or older than 20, install [Node.js 20+](https://nodejs.org/en/download), reopen the terminal, and try again. Other desktop platforms can run `npm ci` then `npm start`. A visitor to a hosted copy only needs a browser. The core lab needs no database, account or paid service; Gemini is optional and requires a server-side API key.
+If Node.js is missing or older than 20, install [Node.js 20+](https://nodejs.org/en/download), reopen the terminal, and try again. Other desktop platforms can run `npm ci` then `npm start`. A visitor browsing the hosted copy only needs a browser; someone running local k6 also needs Node.js, k6 and a local QA Lab copy. The core lab needs no database or paid service. Gemini is optional.
 
 ## What to click
 
-- **Performance:** choose Load, Stress, Spike or Soak; inspect the planned VU curve and limits. **Run local k6** generates real load on your own computer and updates detailed results on this page automatically after each run. **Run probe** sends only one request. **Open summary** remains available for older JSON results.
+- **Performance:** choose Load, Stress, Spike or Soak; inspect the planned VU curve and limits. **Run local k6** generates real load on your own computer and updates the prominent verdict plus detailed results after each run. On the hosted site, first connect the local QA Lab with the pairing code shown in its terminal. **Run probe** sends only one request. **Open summary** remains available for older JSON results.
 - **Unit:** edit latency, error rate and thresholds; compare pass, boundary and invalid results.
 - **API:** send preset valid/invalid requests and inspect HTTP status and JSON.
 - **Web E2E:** create, review and save a test plan through the real UI and API.
 - **Mobile web:** use a narrow screen or Playwright's mobile project; check overflow and repeat the plan flow.
-- **Visual:** compare the stable specimen to its screenshot baseline; the shifted variant intentionally fails the image assertion.
-- **AI-assisted:** generate draft test cases through Gemini when configured, or build a prompt for another AI tool. Review the draft and run its proposed test; generation alone is not a pass.
-- **CI/CD:** open GitHub Actions to see automated unit, API, desktop, mobile and visual checks.
+- **Visual:** the page measures a live DOM-style shift; run `npm run test:visual` for the actual Playwright screenshot comparison. The shifted variant intentionally fails the image assertion.
+- **AI-assisted:** use the group Gemini key or enter a personal Gemini API key, load available models, then generate a draft. Review and run the proposed test; generation alone is not a pass.
+- **CI/CD:** the page shows the latest public workflow state; open GitHub Actions for job-level unit, API, desktop, mobile and visual results.
 
 See [the case matrix](docs/demo-cases.md) and [the performance guide](docs/performance.md) for class demonstrations and interpretation.
 
@@ -39,7 +39,7 @@ npm run test:visual
 
 ## Run real performance tests
 
-Install [Grafana k6](https://grafana.com/docs/k6/latest/set-up/install-k6/) on the **load generator** computer. Start this app locally and click **Run local k6** for each scenario. The latest completed result, including request counts, HTTP status counts, latency percentiles, phase measurements and threshold decisions, appears below the button. A new run clears the previous result while it is in progress. Browser-started summaries are held in the local server's memory and are lost on restart; use screenshots for evidence or run the commands below if you need saved JSON files. In a second terminal, the equivalent commands are:
+Install [Grafana k6](https://grafana.com/docs/k6/latest/set-up/install-k6/) on the **load generator** computer. Start this app locally and click **Run local k6** for each scenario. A prominent verdict near the top shows request count, p95 and error rate against scenario limits; detailed HTTP status counts, latency percentiles, phase measurements and threshold decisions appear below the button. A new run clears the previous result while it is in progress. Browser-started summaries are held in the local server's memory and are lost on restart; use screenshots for evidence or run the commands below if you need saved JSON files. In a second terminal, the equivalent commands are:
 
 ```bash
 npm run perf:load
@@ -50,15 +50,19 @@ npm run perf:soak
 
 For a larger **local-only** run, change **Local peak VUs** on the Performance page and click **Run local k6**, or copy its command, for example `npm run perf:stress -- --vus 120`. The supported range is 1–200 VUs (5–200 for Spike). Run one scenario at a time and watch your computer's CPU. More VUs do not guarantee a high p95: the 24-job admission cap can return fast HTTP 503s, making the **error-rate** threshold fail while latency remains below its limit.
 
-The command-line wrapper checks k6 and the target before starting, and saves a JSON summary to `results/`; the web button does not create a lasting file. If k6 is installed as a portable executable, set `K6_BIN` to its full path before starting the local server. A crossed threshold makes k6 exit nonzero but its measurements still appear on the page. The default target is `127.0.0.1:4173`. Remote load is blocked unless the operator explicitly allows it with `ALLOW_REMOTE_LOAD=1`. **Do not stress-test a public/shared host without permission.** The web button is disabled on a production host; local runs avoid hosting cost, and CI never runs the load scripts.
+The command-line wrapper checks k6 and the target before starting, and saves a JSON summary to `results/`; the web button does not create a lasting file. If k6 is installed as a portable executable, set `K6_BIN` to its full path before starting the local server. A crossed threshold makes k6 exit nonzero but its measurements still appear on the page. The default target is `127.0.0.1:4173`. Remote load is blocked unless the operator explicitly allows it with `ALLOW_REMOTE_LOAD=1`. **Do not stress-test a public/shared host without permission.** The hosted server never runs k6; local runs avoid hosting cost, and CI never runs the load scripts.
+
+### Run local k6 while viewing the hosted site
+
+Start your own QA Lab with `start-windows.cmd` and keep it open. Its terminal prints a fresh **Hosted-site pairing code**. On the hosted Performance page, enter that code and click **Connect this computer**. The browser may request local-network access. Once connected, **Run local k6** calls only `127.0.0.1:4173`; the local k6 process targets your local API. The code is held only in the current tab's memory and is never sent to Render. The bridge accepts requests only from the configured origin and loopback interface. Default allowed origin: `https://qa-playground-5n74.onrender.com`; set `LOCAL_BRIDGE_ORIGIN` before starting QA Lab if your hosted URL differs. If browser policy blocks the bridge, use <http://localhost:4173> instead.
 
 The target performs real asynchronous PBKDF2 work and caps concurrent jobs at 24, returning HTTP 503 above capacity. k6 records real response times, error rates, request counts and phase comparisons. The API reports actual Node heap usage, not a simulated memory value. An overall threshold can pass even when some requests fail; inspect the phase table too. These short, single-machine tests illustrate methods, not production capacity. See [performance methodology and caveats](docs/performance.md).
 
 ## Hosting
 
-Use a provider that runs a Node.js service. Set install/build to `npm ci`, start to `npm start`, and expose the assigned `PORT`. Production mode listens on all interfaces; local development listens only on `127.0.0.1` unless `HOST` is set. GitHub Pages or other static-only hosting cannot run this API. With `NODE_ENV=production`, the expensive endpoint admits at most two requests per second per server instance (HTTP 429 after that), so the hosted site is for browsing and light probes. Run substantial k6 traffic against a local copy to avoid shared-server load or fees. There is no app-wide authentication; the optional AI endpoint requires a group code. Saved test plans and telemetry are in memory and disappear on restart; do not enter personal data. Multiple server instances do not share plans or metrics.
+Use a provider that runs a Node.js service. Set install/build to `npm ci`, start to `npm start`, and expose the assigned `PORT`. Production mode listens on all interfaces; local development listens only on `127.0.0.1` unless `HOST` is set. GitHub Pages or other static-only hosting cannot run this API. With `NODE_ENV=production`, the expensive endpoint admits at most two requests per second per server instance (HTTP 429 after that), so the hosted site is for browsing and light probes. Run substantial k6 traffic against a local copy to avoid shared-server load or fees. There is no app-wide authentication; the group-key AI endpoint requires a group code, while personal-key mode uses each visitor's key for a request. Saved test plans and telemetry are in memory and disappear on restart; do not enter personal data. Multiple server instances do not share plans or metrics.
 
-To enable Gemini on Render, set `GEMINI_API_KEY` and a long `AI_DEMO_ACCESS_CODE` under the service's Environment settings, then redeploy. Share only the access code with classmates; never share the Gemini key. The AI endpoint is disabled until both values are present. It allows 20 requests per hour and two concurrent requests per instance, but that is not a billing cap. `GEMINI_MODEL` optionally overrides the default `gemini-3.5-flash-lite`. See [the AI-assisted guide](docs/ai-assisted.md) for use and safety details. Core lab pages work without these variables.
+To enable the shared Gemini mode on Render, set `GEMINI_API_KEY` and a long `AI_DEMO_ACCESS_CODE` under the service's Environment settings, then redeploy. Share only the access code with classmates; never share the Gemini key. Personal-key mode works without these variables: the key is sent through this server to Gemini for that request but is not saved. Generation allows 20 requests per hour and two concurrent requests per instance, but that is not a billing cap. `GEMINI_MODEL` optionally overrides the default `gemini-3.5-flash-lite`; users can load and select available models. See [the AI-assisted guide](docs/ai-assisted.md) for safety details. Core lab pages work without any Gemini configuration.
 
 ## Repository map
 

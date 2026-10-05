@@ -2,7 +2,7 @@
 
 Repo chung: https://github.com/ZoeChan189/qa-playground
 
-Mỗi thành viên tải cùng mã nguồn nhưng **chạy QA Lab và k6 trên máy của mình**. Trang Render chỉ để xem giao diện và gửi vài request thử; nút **Run local k6** bị khóa ở đó. Để làm bài Stress, Spike và Soak thật, mở địa chỉ `http://localhost:4173/` trên chính máy đang chạy ứng dụng.
+Mỗi thành viên tải cùng mã nguồn và **chạy QA Lab cùng k6 trên máy của mình**. Có hai cách bấm test: mở `http://localhost:4173/` (đơn giản nhất), hoặc mở trang Render rồi ghép nối với QA Lab local bằng mã trong cửa sổ lệnh. Cả hai cách đều tạo tải trên máy của thành viên, không chạy k6 trên Render.
 
 ## 1. Cài đặt một lần trên mỗi máy Windows
 
@@ -18,14 +18,23 @@ set "K6_BIN=C:\duong-dan\den\k6.exe"
 start-windows.cmd
 ```
 
-Thay đường dẫn ví dụ bằng đường dẫn thật tới `k6.exe`. Nếu nút vẫn bị khóa, đóng server, mở Command Prompt mới rồi chạy lại. Chỉ cài k6 mà mở link Render sẽ **không** làm nút trên Render sáng lên.
+Thay đường dẫn ví dụ bằng đường dẫn thật tới `k6.exe`. Nếu nút vẫn bị khóa, đóng server, mở Command Prompt mới rồi chạy lại. Chỉ cài k6 mà chưa chạy QA Lab local thì trang Render **không thể** gọi k6 trên máy bạn.
+
+### Nếu muốn bấm test ngay trên trang Render
+
+1. Làm xong các bước cài ở trên, giữ `start-windows.cmd` đang mở. Cửa sổ này hiện dòng **Hosted-site pairing code**. Mã thay đổi mỗi khi khởi động lại.
+2. Trên trang Render, mở **Performance**, dán mã vào **Pairing code from local QA Lab window**, bấm **Connect this computer**. Trình duyệt có thể xin quyền truy cập dịch vụ trên máy cục bộ; chỉ cho phép khi bạn đang ở trang Render của nhóm.
+3. Khi thấy **Connected to local k6**, chọn Stress/Spike/Soak, nhập Peak VUs rồi bấm **Run local k6**. Chờ kết quả hiện ngay trên trang. Đừng đóng cửa sổ QA Lab local trong lúc chạy.
+4. Mã chỉ giữ trong bộ nhớ tab hiện tại; tải lại trang phải nhập lại. Trang Render gửi lệnh tới `127.0.0.1:4173`, còn k6 đánh vào API trên chính máy bạn.
+
+Nếu trang host của nhóm đổi địa chỉ, trước khi chạy `start-windows.cmd` đặt `LOCAL_BRIDGE_ORIGIN` đúng địa chỉ gốc HTTPS, ví dụ `set "LOCAL_BRIDGE_ORIGIN=https://ten-site.onrender.com"`. Không nhập dấu `/` cuối. Nếu trình duyệt chặn kết nối localhost, dùng trang `http://localhost:4173/` để chạy; phép đo và bảng kết quả tương đương.
 
 ## 2. Chạy bài test trên web local
 
 1. Vào **Performance**, chọn **Stress**, **Spike** hoặc **Soak**. Chọn tab chỉ đổi kế hoạch tải; chưa chạy test.
 2. Giữ **Local peak VUs** mặc định ở lượt đầu. Bấm **Run local k6**. Trạng thái chuyển sang đang chạy và kết quả cũ được ẩn.
 3. Chờ đến khi thấy **Latest test completed**. Stress mất khoảng 34 giây, Spike khoảng 22 giây, Soak khoảng 100 giây. Có thể mất thêm ít thời gian để k6 kết thúc và trang cập nhật.
-4. Đọc bảng ở ngay dưới nút: **Scenario, Requests, p95, Error rate, Peak active, Heap range, Thresholds**, rồi **Measured details**, **Threshold decisions**, **Phase comparison**. Kiểm tra **Completed at** để chắc đó là lượt mới nhất. Chụp màn hình nếu cần bằng chứng.
+4. Dòng kết quả nổi bật gần đầu trang hiện **PASS/FAIL, Requests, p95 và Error rate** so với ngưỡng; bảng ở dưới nút có thêm **Peak active, Heap range, Measured details, Threshold decisions, Phase comparison**. Kiểm tra **Completed at** để chắc đó là lượt mới nhất. Chụp màn hình nếu cần bằng chứng.
 5. Chạy tiếp kịch bản khác, mỗi lần **chỉ một bài**. Không mở hai lượt đồng thời vì chúng làm sai phép đo của nhau.
 
 Muốn thử mức tải khác, nhập **Local peak VUs** trước khi bấm. Khoảng cho phép là **1–200 VUs**, riêng Spike cần **5–200 VUs**. Đây là số người dùng ảo tối đa theo kế hoạch, **không phải** số request/giây. Mức mặc định: Stress 40, Spike 45, Soak 10. Máy yếu có thể bắt đầu với số nhỏ; kết quả của hai máy khác nhau không phải lúc nào cũng so trực tiếp được.
@@ -88,7 +97,7 @@ Các chữ viết tắt: **VU** = Virtual User (người dùng ảo); **p95/p90*
 
 Mã nguồn mới nhất nằm ở repo chung. Các bạn chỉ cần **Download ZIP** để tự chạy; không cần Fork hay tự deploy nếu thầy không yêu cầu. Muốn có repo GitHub riêng thì dùng **Fork**; không đưa `node_modules/`, `results/`, `.env` hoặc API key lên GitHub.
 
-Bản Render có thể cho người khác mở giao diện và **Run probe** nhẹ. Nó **không thể gọi `k6.exe` trên máy người xem**, nên **Run local k6 bị khóa**, và bảng kết quả k6 trống cho đến khi chọn **Open summary**. Để mỗi bạn tự chạy bài thật và thấy bảng tự cập nhật, dùng **web local** như mục 2. Không gửi tải Stress/Spike/Soak vào Render công khai; server chung có thể bị ảnh hưởng hoặc phát sinh chi phí.
+Bản Render có thể cho người khác mở giao diện và **Run probe** nhẹ. Trình duyệt không tự gọi `k6.exe`; để bấm **Run local k6** từ Render, bạn phải chạy QA Lab local và ghép nối như mục 1. Cách đơn giản hơn vẫn là dùng **web local**. Không gửi tải Stress/Spike/Soak vào Render công khai; server chung có thể bị ảnh hưởng hoặc phát sinh chi phí.
 
 Nếu thầy yêu cầu mỗi người deploy một bản riêng: Fork repo, vào Render tạo **Web Service** Node từ repo vừa Fork, Build Command `npm ci`, Start Command `npm start`, đặt `NODE_ENV=production`, rồi kiểm tra `/api/health`. **Deploy riêng vẫn không thay thế bài k6 local.**
 
@@ -99,7 +108,8 @@ Nếu thầy yêu cầu mỗi người deploy một bản riêng: Fork repo, và
 | `node` hoặc `npm` không nhận | Cài Node.js 20+, đóng Command Prompt cũ và mở cửa sổ mới. |
 | `k6 version` không nhận | Cài k6, mở terminal mới; hoặc đặt `K6_BIN` trỏ đúng `k6.exe` trước khi chạy server. |
 | Không mở được localhost | Giữ cửa sổ `start-windows.cmd` đang chạy; xem thông báo lỗi hoặc cổng 4173 có bị chiếm không. |
-| Run local k6 mờ/không bấm được | Kiểm tra bạn đang ở **localhost**, không phải Render. Nếu đã ở localhost, kiểm tra k6 và khởi động lại server. |
+| Run local k6 mờ/không bấm được | Trên localhost: kiểm tra k6 và khởi động lại QA Lab. Trên Render: chạy QA Lab local, lấy mã mới và bấm Connect this computer. |
+| Connect this computer thất bại | Kiểm tra QA Lab local còn chạy, mã ghép nối đúng, `LOCAL_BRIDGE_ORIGIN` trùng URL host, và cho phép truy cập local network trong trình duyệt. Nếu vẫn bị chặn, mở localhost để test. |
 | Bấm Run probe nhưng không có bảng/JSON | Đúng thiết kế: probe chỉ có một request. Dùng **Run local k6** hoặc script để chạy bài đầy đủ. |
 | Bấm Run local k6 mà không thấy file JSON | Nút này chỉ tự hiện kết quả trên web. Dùng `run-performance-windows.cmd` nếu cần file trong `results/`. |
 | Kết quả có vẻ là lượt cũ | Khi chạy bài mới, bảng cũ ẩn đi. Chờ **Latest test completed**, xem **Completed at**; thử tải lại trang local nếu cần. |

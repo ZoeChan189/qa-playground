@@ -44,6 +44,8 @@ test("k6 summary import reads flat metrics and phase comparison", async ({ page 
   await expect(page.locator("#profile-vus")).toHaveText("120 VUs");
   await expect(page.locator("#perf-command")).toHaveText("npm run perf:spike -- --vus 120");
   await expect(page.locator("#summary-verdict")).toHaveText("LIMIT BREACHED");
+  await expect(page.locator("#perf-outcome-title")).toContainText("FAIL");
+  await expect(page.locator("#perf-outcome-detail")).toContainText("3,937 requests");
   await expect(page.locator("#summary-message")).toContainText("p95 PASS");
   await expect(page.locator("#summary-message")).toContainText("Errors FAIL");
   await expect(page.locator("#phase-rows tr")).toHaveCount(3);
@@ -75,6 +77,7 @@ test("local k6 replaces stale details after each completed run", async ({ page }
   await expect(page.locator("#summary-requests")).toHaveText("12");
   await page.locator("#run-k6").click();
   await expect(page.locator("#summary-result")).toBeHidden();
+  await expect(page.locator("#perf-outcome-title")).toContainText("running");
   await expect(page.locator("#run-state-title")).toHaveText("LOAD test running");
   run = { ...run, status: "complete", finishedAt: new Date().toISOString(), summary: summary(37) };
   await expect(page.locator("#summary-requests")).toHaveText("37");
@@ -85,6 +88,7 @@ test("local k6 replaces stale details after each completed run", async ({ page }
   await expect(page.locator("#summary-result")).toBeHidden();
   run = { ...run, status: "complete", finishedAt: new Date().toISOString(), summary: summary(58) };
   await expect(page.locator("#summary-requests")).toHaveText("58");
+  await expect(page.locator("#perf-outcome-detail")).toContainText("58 requests");
   await expect(page.locator("#summary-source")).toContainText("Latest local k6 run");
 });
 
@@ -101,14 +105,17 @@ test("unit and API workbenches expose pass and validation failure", async ({ pag
   await page.getByRole("button", { name: "Unit", exact: true }).click();
   await page.getByRole("button", { name: "Evaluate", exact: true }).click();
   await expect(page.locator("#unit-result")).toContainText("PASS");
+  await expect(page.locator("#view-unit .evidence-panel")).toContainText("2 / 2");
   await page.locator("#unit-p95").fill("500");
   await page.getByRole("button", { name: "Evaluate", exact: true }).click();
   await expect(page.locator("#unit-result")).toContainText("FAIL");
+  await expect(page.locator("#view-unit .evidence-panel")).toContainText("1 / 2");
   await page.getByRole("button", { name: "API", exact: true }).click();
   await page.locator("#api-preset").selectOption("invalid");
   await page.getByRole("button", { name: "Send request" }).click();
   await expect(page.locator("#api-response-status")).toHaveText("HTTP 400");
   await expect(page.locator("#api-response")).toContainText("invalid_metrics");
+  await expect(page.locator("#view-api .evidence-panel")).toContainText("PASS");
 });
 
 test("review, back and save a plan through the API", async ({ page, request }) => {
@@ -126,6 +133,7 @@ test("review, back and save a plan through the API", async ({ page, request }) =
   await page.getByRole("button", { name: "Review plan" }).click();
   await page.getByRole("button", { name: "Save plan" }).click();
   await expect(page.getByRole("heading", { name: "Plan saved" })).toBeVisible();
+  await expect(page.locator("#view-e2e .evidence-panel")).toContainText("Matched ID + fields");
   const id = await page.locator("#plan-saved-id").textContent();
   const saved = await request.get(`/api/plans/${id}`);
   expect(saved.ok()).toBe(true);
@@ -140,8 +148,10 @@ test("AI prompt and visual variant are usable", async ({ page }) => {
   await page.getByRole("button", { name: "Visual", exact: true }).click();
   await page.getByRole("button", { name: "Shifted variant" }).click();
   await expect(page.locator("#visual-specimen")).toHaveClass(/shifted/);
+  await expect(page.locator("#view-visual .evidence-panel")).toContainText("28 px");
   await page.getByRole("button", { name: "Baseline" }).click();
   await expect(page.locator("#visual-specimen")).not.toHaveClass(/shifted/);
+  await expect(page.locator("#view-visual .evidence-panel")).toContainText("0 px");
 });
 
 test("AI page sends a protected request and displays the draft as text", async ({ page }) => {
@@ -161,6 +171,23 @@ test("AI page sends a protected request and displays the draft as text", async (
   const dimensions = await page.evaluate(() => ({ width: document.documentElement.clientWidth, content: document.documentElement.scrollWidth }));
   expect(dimensions.content).toBeLessThanOrEqual(dimensions.width);
   expect(sent).toMatchObject({ topic: "performance", accessCode: "group-code" });
+  await expect(page.locator("#view-ai .evidence-panel")).toContainText("Draft generated");
+});
+
+test("personal Gemini key mode loads models without saving the key", async ({ page }) => {
+  await page.route("**/api/ai/status", (route) => route.fulfill({ json: { available: false, requiresCode: false, reason: "missing_key" } }));
+  await page.route("**/api/ai/models", (route) => route.fulfill({ json: { models: [{ id: "gemini-2.5-flash", label: "Gemini Flash" }] } }));
+  let sent;
+  await page.route("**/api/ai/generate", (route) => { sent = route.request().postDataJSON(); return route.fulfill({ json: { text: "Draft", model: "gemini-2.5-flash" } }); });
+  await page.goto("/#ai");
+  await page.getByRole("button", { name: "My API key" }).click();
+  await page.locator("#ai-personal-key").fill("personal-test-key-long-enough");
+  await page.getByRole("button", { name: "Load models" }).click();
+  await expect(page.locator("#ai-model")).toHaveValue("gemini-2.5-flash");
+  await page.getByRole("button", { name: "Generate test cases" }).click();
+  await expect(page.locator("#ai-result")).toHaveText("Draft");
+  expect(sent).toMatchObject({ mode: "personal", model: "gemini-2.5-flash", apiKey: "personal-test-key-long-enough" });
+  expect(await page.evaluate(() => localStorage.length)).toBe(0);
 });
 
 test("mobile navigation, plan form and page width remain usable", async ({ page }, testInfo) => {
@@ -171,6 +198,7 @@ test("mobile navigation, plan form and page width remain usable", async ({ page 
   await page.getByRole("button", { name: "Mobile web" }).click();
   await page.getByRole("button", { name: "Check layout" }).click();
   await expect(page.locator("#mobile-overflow")).toHaveText("None");
+  await expect(page.locator("#view-mobile .evidence-panel")).toContainText("PASS");
   await page.getByRole("button", { name: "Open plan flow" }).click();
   await expect(page.locator("#plan-name")).toBeVisible();
 });
