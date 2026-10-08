@@ -1100,6 +1100,12 @@ setVisualVariant("baseline");
 updateAiEvidence();
 loadAiStatus();
 checkHealth();
+fetch("/api/version", { cache: "no-store" }).then(async (response) => {
+  if (!response.ok) return;
+  const release = await response.json();
+  if (typeof release.version !== "string") return;
+  byId("release-version").textContent = `Version ${release.version}${release.commit ? ` · ${release.commit.slice(0, 7)}` : " · local"}`;
+}).catch(() => {});
 try {
   const response = await fetch("/api/perf/scenarios");
   if (!response.ok) throw new Error("Scenario data unavailable");

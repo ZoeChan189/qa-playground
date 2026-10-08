@@ -8,6 +8,19 @@ beforeEach(() => { app = createApp(); });
 afterEach(() => vi.unstubAllEnvs());
 
 describe("QA Lab API", () => {
+  it("identifies the deployed version and never caches mutable app assets", async () => {
+    vi.stubEnv("RENDER_GIT_COMMIT", "a".repeat(40));
+    const version = await request(app).get("/api/version");
+    expect(version.body).toEqual({ version: "1.1.0", commit: "a".repeat(40) });
+    expect(version.headers["cache-control"]).toBe("no-store");
+    for (const asset of ["/", "/app.js", "/styles.css", "/shared/test-evidence.js", "/vendor/html2canvas.js", "/some-route"]) {
+      const result = await request(app).get(asset);
+      expect(result.status).toBe(200);
+      expect(result.headers["cache-control"]).toBe("no-store");
+    }
+    vi.stubEnv("RENDER_GIT_COMMIT", "not-a-public-commit");
+    expect((await request(app).get("/api/version")).body.commit).toBeNull();
+  });
   it("accepts an automatically paired token and rejects a different website", async () => {
     const origin = "https://class.example";
     const session = createBridgeSession({ origin, code: "manual" });

@@ -4,6 +4,7 @@ import { promisify } from "node:util";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { readFileSync } from "node:fs";
 import { evaluateThresholds, percentile } from "../public/shared/evaluation.js";
 import { validatePlan } from "../public/shared/plan-rules.js";
 import { perfScenarios } from "./domain/perf-scenarios.js";
@@ -14,6 +15,7 @@ import { scenarioWithPeak } from "../public/shared/perf-profile.js";
 const deriveKey = promisify(pbkdf2);
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.resolve(currentDir, "../public");
+const appVersion = JSON.parse(readFileSync(path.resolve(currentDir, "../package.json"), "utf8")).version;
 const iconsDir = path.resolve(currentDir, "../node_modules/lucide-static/icons");
 const maxInflight = Math.max(1, Math.min(64, Number(process.env.PERF_MAX_INFLIGHT) || 24));
 
@@ -82,6 +84,11 @@ export function createApp({ aiFetch = fetch, perfRunner = createLocalPerfRunner(
 
   app.get("/api/health", (_request, response) => {
     response.json({ status: "ready", service: "qa-lab" });
+  });
+
+  app.get("/api/version", (_request, response) => {
+    const commit = process.env.RENDER_GIT_COMMIT || "";
+    response.json({ version: appVersion, commit: /^[a-f0-9]{7,40}$/i.test(commit) ? commit : null });
   });
 
   app.get("/api/perf/scenarios", (_request, response) => {
@@ -293,9 +300,10 @@ export function createApp({ aiFetch = fetch, perfRunner = createLocalPerfRunner(
   });
 
   app.use("/icons", express.static(iconsDir, { maxAge: "1d" }));
-  app.get("/vendor/html2canvas.js", (_request, response) => response.sendFile(path.resolve(currentDir, "../node_modules/html2canvas/dist/html2canvas.esm.js")));
-  app.use(express.static(publicDir, { maxAge: 0 }));
-  app.get("/{*path}", (_request, response) => response.sendFile(path.join(publicDir, "index.html")));
+  const freshAssetHeaders = { "Cache-Control": "no-store" };
+  app.get("/vendor/html2canvas.js", (_request, response) => response.sendFile(path.resolve(currentDir, "../node_modules/html2canvas/dist/html2canvas.esm.js"), { headers: freshAssetHeaders }));
+  app.use(express.static(publicDir, { etag: false, lastModified: false, setHeaders: (response) => response.set(freshAssetHeaders) }));
+  app.get("/{*path}", (_request, response) => response.sendFile(path.join(publicDir, "index.html"), { headers: freshAssetHeaders }));
 
   return app;
 }

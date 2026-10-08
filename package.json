@@ -1,6 +1,6 @@
 {
   "name": "qa-playground",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "A local-first testing lab with a real performance workload and focused examples for eight testing topics.",
   "type": "module",
