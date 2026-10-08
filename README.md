@@ -6,6 +6,8 @@ One small, real web application for SWT301 testing demonstrations. **Performance
 
 Each group member can run an independent local copy. See the current [step-by-step Vietnamese guide](docs/for-team.md) for the connector and the on-page test decisions.
 
+Download the [complete Vietnamese Word handbook](docs/QA_Lab_Huong_dan_cap_nhat_cai_dat_va_cac_topic.docx) for upgrading an older copy, first-time installation, detailed k6 connection steps, every topic's displayed values and pass/fail examples.
+
 1. On this GitHub page, choose **Code > Download ZIP**, then extract it (or clone the repo).
 2. Double-click `setup-windows.cmd` once. It installs missing Node.js/k6, installs dependencies and registers the `qalab://` connector for this Windows user. Keep the extracted folder in place; rerun setup after moving it.
 3. Open the hosted Performance page and click **Connect k6**. Allow the browser to open QA Lab and access the local network. The connector starts the local API automatically and pairs the current tab without copying a code.

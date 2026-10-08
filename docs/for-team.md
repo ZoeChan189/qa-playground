@@ -2,6 +2,8 @@
 
 Repo chung: https://github.com/ZoeChan189/qa-playground
 
+[Tải hướng dẫn Word đầy đủ](QA_Lab_Huong_dan_cap_nhat_cai_dat_va_cac_topic.docx): cập nhật bản cũ, cài lần đầu, kết nối từng bước và giải thích giá trị của cả 8 topic.
+
 Mỗi thành viên tải cùng mã nguồn và **chạy QA Lab cùng k6 trên máy của mình**. Sau khi cài bộ kết nối một lần, các bạn có thể mở trang Render, bấm **Connect k6** rồi **Run local k6**. Trang tự mở bộ chạy trên máy bạn và tự hiện kết quả; không cần mở hay tìm file JSON. Tải test chạy trên máy thành viên, không chạy trên Render.
 
 ## 1. Cài đặt một lần trên mỗi máy Windows
