@@ -2,11 +2,17 @@ import { describe, expect, it } from "vitest";
 import { evaluateThresholds, percentile } from "../../public/shared/evaluation.js";
 import { validatePlan } from "../../public/shared/plan-rules.js";
 import { perfScenarios } from "../../src/domain/perf-scenarios.js";
-import { scenarioWithPeak } from "../../public/shared/perf-profile.js";
+import { scenarioWithPeak, soakSteadySeconds } from "../../public/shared/perf-profile.js";
 
 const validMetrics = { p95Ms: 280, errorRate: 0.005, p95LimitMs: 500, errorLimit: 0.01 };
 
 describe("threshold evaluation", () => {
+  it.each([false, true, [], [1], {}, " ", "0x10", null, undefined, Infinity, NaN])("rejects non-numeric metric input %j", (p95Ms) => {
+    expect(evaluateThresholds({ ...validMetrics, p95Ms }).valid).toBe(false);
+  });
+  it("accepts decimal and scientific numeric form strings", () => {
+    expect(evaluateThresholds({ ...validMetrics, p95Ms: " 2.8e2 " }).passed).toBe(true);
+  });
   it("passes only when latency and errors are both below their limits", () => {
     expect(evaluateThresholds(validMetrics).passed).toBe(true);
     expect(evaluateThresholds({ ...validMetrics, errorRate: 0.02 }).checks).toEqual({ latencyPassed: true, errorsPassed: false });
@@ -32,6 +38,9 @@ describe("threshold evaluation", () => {
 
 describe("test plan rules", () => {
   const validPlan = { name: "  Peak   traffic  ", scenario: "spike", targetVus: 45, notes: "classroom" };
+  it.each([{ name: {} }, { name: ["Valid name"] }, { targetVus: true }, { targetVus: [5] }, { notes: {} }, { scenario: ["stress"] }])("rejects coerced plan fields %j", (fields) => {
+    expect(validatePlan({ ...validPlan, ...fields }).valid).toBe(false);
+  });
 
   it("normalizes a valid plan", () => {
     const result = validatePlan(validPlan);
@@ -47,6 +56,12 @@ describe("test plan rules", () => {
 });
 
 describe("performance profiles", () => {
+  it.each([["90s", 90], ["5m", 300], ["1h30m", 5400], ["1500ms", 1.5]])("parses Soak duration %s", (input, seconds) => {
+    expect(soakSteadySeconds(input)).toBe(seconds);
+  });
+  it.each(["90", "0s", "5garbage", "-1m", "25h", "1sBAD", "Infinitys"])("rejects invalid Soak duration %s", (input) => {
+    expect(() => soakSteadySeconds(input)).toThrow();
+  });
   it("has distinct stress, spike and soak shapes", () => {
     const stress = perfScenarios.stress.stages;
     const spike = perfScenarios.spike.stages;

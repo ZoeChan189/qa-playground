@@ -55,6 +55,10 @@ let visualBusy = false;
 let visualBaseline = null;
 let visualGeneration = 0;
 let e2eResult = null;
+let telemetryPending = false;
+let aiBusy = false;
+let aiModelsPending = false;
+let ciPending = false;
 
 function createEvidence(topic, afterId, description) {
   const section = document.createElement("section");
@@ -280,13 +284,16 @@ function updatePeak() {
 }
 
 async function pollTelemetry() {
-  if (!scenarios || document.hidden || !byId("view-performance").classList.contains("active")) return;
+  if (!scenarios || telemetryPending || document.hidden || !byId("view-performance").classList.contains("active")) return;
+  telemetryPending = true;
+  const source = bridgeCode;
   try {
     const response = await fetch(bridgeConnected ? `${bridgeBase}/metrics` : "/api/perf/metrics", {
-      cache: "no-store", headers: bridgeConnected ? { "X-QA-Bridge-Code": bridgeCode } : {},
+      cache: "no-store", headers: bridgeConnected ? { "X-QA-Bridge-Code": bridgeCode } : {}, signal: AbortSignal.timeout(10_000),
     });
     if (!response.ok) throw new Error("Telemetry unavailable");
     const data = await response.json();
+    if (source !== bridgeCode) return;
     byId("metric-active").textContent = data.active;
     byId("metric-capacity").textContent = `of ${data.capacity} capacity`;
     byId("metric-completed").textContent = data.completed.toLocaleString();
@@ -298,14 +305,14 @@ async function pollTelemetry() {
     if (heapHistory.length > 42) heapHistory.shift();
     drawHeapChart();
   } catch {
-    byId("telemetry-updated").textContent = "Telemetry offline · last sample shown";
-  }
+    if (source === bridgeCode) byId("telemetry-updated").textContent = "Telemetry offline · last sample shown";
+  } finally { telemetryPending = false; }
 }
 
 async function checkHealth() {
   const status = byId("server-status");
   try {
-    const response = await fetch("/api/health", { cache: "no-store" });
+    const response = await fetch("/api/health", { cache: "no-store", signal: AbortSignal.timeout(5000) });
     if (!response.ok || (await response.json()).service !== "qa-lab") throw new Error();
     status.classList.remove("offline");
     status.lastChild.textContent = " API online";
@@ -316,6 +323,7 @@ async function checkHealth() {
 }
 
 async function runProbe() {
+  if (byId("run-probe").disabled) return;
   const work = Number(byId("probe-work").value);
   const result = byId("probe-result");
   if (!Number.isInteger(work) || work < 1 || work > 100) {
@@ -325,20 +333,21 @@ async function runProbe() {
   }
   result.className = "result-line";
   result.textContent = "Running one request…";
+  byId("run-probe").disabled = true;
   const started = performance.now();
   try {
     const response = await fetch(bridgeConnected ? `${bridgeBase}/probe?work=${work}` : `/api/perf/work?work=${work}`, {
-      cache: "no-store", headers: bridgeConnected ? { "X-QA-Bridge-Code": bridgeCode } : {},
+      cache: "no-store", headers: bridgeConnected ? { "X-QA-Bridge-Code": bridgeCode } : {}, signal: AbortSignal.timeout(20_000),
     });
     const body = await response.json();
     const elapsed = Math.round(performance.now() - started);
     result.className = `result-line ${response.ok ? "pass" : "fail"}`;
-    result.textContent = response.ok ? `HTTP 200 · ${elapsed} ms client · ${body.serviceMs} ms server · ${body.iterations.toLocaleString()} iterations` : `HTTP ${response.status} · ${body.message || body.error}`;
+    result.textContent = response.ok ? `HTTP 200 · work ${work} · ${elapsed} ms client · ${body.serviceMs} ms server · ${body.iterations.toLocaleString()} iterations · single request only, not a k6 verdict` : `HTTP ${response.status} · ${body.message || body.error}`;
     pollTelemetry();
   } catch {
     result.className = "result-line fail";
     result.textContent = "Request failed. Check the API connection.";
-  }
+  } finally { byId("run-probe").disabled = false; }
 }
 
 function tableRow(values, lastClass = "") {
@@ -488,13 +497,16 @@ async function importSummary(file) {
 async function pollLatestRun() {
   if (!scenarios || latestPollPending || document.hidden || !byId("view-performance").classList.contains("active")) return;
   latestPollPending = true;
+  const source = bridgeCode;
   try {
     const response = await fetch(bridgeConnected ? `${bridgeBase}/runs/latest` : "/api/perf/runs/latest", {
       cache: "no-store",
       headers: bridgeConnected ? { "X-QA-Bridge-Code": bridgeCode } : {},
+      signal: AbortSignal.timeout(10_000),
     });
     if (!response.ok) throw new Error("Local run status unavailable.");
     const data = await response.json();
+    if (source !== bridgeCode) return;
     localK6Ready = data.canRun;
     runActive = data.run?.status === "running";
     const availability = byId("run-availability");
@@ -536,6 +548,7 @@ async function pollLatestRun() {
       showRunState("k6 run failed", run.message || "No valid summary was produced. Check k6 installation and try again.", true);
     }
   } catch {
+    if (source !== bridgeCode) return;
     localK6Ready = false;
     byId("run-k6").disabled = true;
     byId("run-availability").textContent = "Local runner offline. Reconnect k6; the result below is from the last completed run.";
@@ -546,6 +559,7 @@ async function pollLatestRun() {
 }
 
 async function startK6Run() {
+  if (runStartPending || runActive) return;
   const peakVus = Number(byId("perf-vus").value);
   try {
     scenarioWithPeak(selectedScenario, scenarios[selectedScenario], peakVus);
@@ -564,6 +578,7 @@ async function startK6Run() {
       method: "POST",
       headers: { "Content-Type": "application/json", ...(bridgeConnected ? { "X-QA-Bridge-Code": bridgeCode } : {}) },
       body: JSON.stringify({ scenario: selectedScenario, peakVus }),
+      signal: AbortSignal.timeout(10_000),
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.message || "Could not start k6.");
@@ -592,7 +607,7 @@ async function connectLocalK6() {
   byId("bridge-connect").disabled = true;
   byId("bridge-status").textContent = "Connecting to this computer...";
   try {
-    const response = await fetch(`${bridgeBase}/status`, { cache: "no-store", headers: { "X-QA-Bridge-Code": entered } });
+    const response = await fetch(`${bridgeBase}/status`, { cache: "no-store", headers: { "X-QA-Bridge-Code": entered }, signal: AbortSignal.timeout(8000) });
     const result = await response.json();
     if (!response.ok) throw new Error(result.message || "Connection rejected. Check the code and allowed site origin.");
     bridgeCode = entered;
@@ -700,6 +715,8 @@ function updateApiPreset() {
 
 async function sendApiRequest() {
   byId("send-api").disabled = true;
+  byId("api-preset").disabled = true;
+  byId("api-body").disabled = true;
   const name = byId("api-preset").value;
   const preset = apiPresets[name];
   showApiEvidence([], "RUNNING · Waiting for this request's response.");
@@ -709,6 +726,7 @@ async function sendApiRequest() {
       method: preset.method,
       headers: preset.method === "POST" ? { "Content-Type": "application/json" } : {},
       body: preset.method === "POST" ? byId("api-body").value : undefined,
+      signal: AbortSignal.timeout(15_000),
     });
     const body = await response.text();
     byId("api-response-status").textContent = `HTTP ${response.status}`;
@@ -741,7 +759,11 @@ async function sendApiRequest() {
     byId("api-response-status").textContent = "Request failed";
     byId("api-response").textContent = error.message;
     showApiEvidence([["HTTP status", "No response"], ["Response time", "–"], ["JSON contract", "Not checked"]], "FAIL · The request did not complete.", "fail");
-  } finally { byId("send-api").disabled = false; }
+  } finally {
+    byId("send-api").disabled = false;
+    byId("api-preset").disabled = false;
+    byId("api-body").disabled = false;
+  }
 }
 
 function planPayload() {
@@ -787,11 +809,11 @@ async function savePlan() {
   e2eResult = null;
   showE2eEvidence([], "RUNNING · Saving and retrieving this plan.");
   try {
-    const response = await fetch("/api/plans", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    const response = await fetch("/api/plans", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload), signal: AbortSignal.timeout(15_000) });
     const body = await response.json();
     checks.push(["Save response", "HTTP 201", `HTTP ${response.status}`, response.status === 201 ? "PASS" : "FAIL"]);
     if (response.status !== 201 || !body.plan?.id) throw new Error(Object.values(body.fields || {}).join(" ") || "Plan could not be saved with an ID and HTTP 201.");
-    const verify = await fetch(`/api/plans/${body.plan.id}`);
+    const verify = await fetch(`/api/plans/${body.plan.id}`, { signal: AbortSignal.timeout(10_000) });
     checks.push(["Read-back response", "HTTP 200", `HTTP ${verify.status}`, verify.status === 200 ? "PASS" : "FAIL"]);
     if (verify.status !== 200) throw new Error("Saved plan could not be retrieved.");
     const saved = (await verify.json()).plan;
@@ -900,7 +922,7 @@ function buildAiPrompt() {
 
 async function loadAiStatus() {
   try {
-    const response = await fetch("/api/ai/status");
+    const response = await fetch("/api/ai/status", { signal: AbortSignal.timeout(10_000) });
     if (!response.ok) throw new Error("AI status unavailable");
     const status = await response.json();
     aiReady = status.available;
@@ -925,7 +947,23 @@ function updateAiMode() {
   byId("ai-mode-personal").classList.toggle("selected", aiMode === "personal");
   byId("ai-access-wrap").hidden = aiMode !== "group" || !aiRequiresCode;
   byId("ai-personal-wrap").hidden = aiMode !== "personal";
-  byId("ai-generate").disabled = aiMode === "group" ? !aiReady : !byId("ai-personal-key").value.trim();
+  const busy = aiBusy || aiModelsPending;
+  byId("ai-generate").disabled = busy || (aiMode === "group" ? !aiReady : !byId("ai-personal-key").value.trim());
+  for (const id of ["ai-mode-group", "ai-mode-personal", "ai-personal-key", "ai-access-code", "ai-topic", "ai-requirement", "ai-model", "ai-load-models"]) byId(id).disabled = busy;
+  byId("view-ai").querySelectorAll(".checklist input").forEach((box) => { box.disabled = busy || !aiDraftReady; });
+}
+
+function invalidateAiDraft() {
+  aiDraftReady = false;
+  aiRequestEvidence = null;
+  byId("ai-result-wrap").hidden = true;
+  byId("view-ai").querySelectorAll(".checklist input").forEach((box) => { box.checked = false; });
+  updateAiEvidence();
+}
+
+function aiErrorText(data) {
+  const detail = data?.diagnostic;
+  return [data?.message || "AI request failed.", detail?.providerStatus ? `Gemini HTTP ${detail.providerStatus}.` : "", detail?.providerCode, detail?.reason, detail?.source ? `Source: ${detail.source}.` : "", detail?.action].filter(Boolean).join(" ");
 }
 
 function aiCredentials() {
@@ -935,6 +973,7 @@ function aiCredentials() {
 }
 
 async function loadAiModels() {
+  if (aiBusy || aiModelsPending) return;
   if (aiMode === "personal" && !byId("ai-personal-key").value.trim()) {
     byId("ai-status").textContent = "Enter your API key first.";
     return;
@@ -943,14 +982,16 @@ async function loadAiModels() {
     byId("ai-status").textContent = "Enter the group access code first.";
     return;
   }
-  byId("ai-load-models").disabled = true;
+  aiModelsPending = true;
+  updateAiMode();
   byId("ai-status").textContent = "Loading available Gemini models...";
   try {
-    const response = await fetch("/api/ai/models", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(aiCredentials()) });
+    const response = await fetch("/api/ai/models", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(aiCredentials()), signal: AbortSignal.timeout(20_000) });
     const data = await response.json();
-    if (!response.ok) throw new Error(data.message || "Could not load models.");
+    if (!response.ok) throw new Error(aiErrorText(data));
     if (!data.models.length) throw new Error("No text generation models were returned for this key.");
     const previous = byId("ai-model").value;
+    invalidateAiDraft();
     byId("ai-model").replaceChildren(...data.models.map((model) => {
       const option = document.createElement("option");
       option.value = model.id;
@@ -962,11 +1003,13 @@ async function loadAiModels() {
   } catch (error) {
     byId("ai-status").textContent = error.message;
   } finally {
-    byId("ai-load-models").disabled = false;
+    aiModelsPending = false;
+    updateAiMode();
   }
 }
 
 async function generateAiCases() {
+  if (aiBusy || aiModelsPending) return;
   if ((aiMode === "group" && !aiReady) || !buildAiPrompt()) return;
   const accessCode = byId("ai-access-code").value;
   if (aiMode === "group" && aiRequiresCode && !accessCode) {
@@ -976,6 +1019,8 @@ async function generateAiCases() {
   }
   const button = byId("ai-generate");
   const started = performance.now();
+  aiBusy = true;
+  updateAiMode();
   button.disabled = true;
   byId("ai-status").textContent = "Generating test cases...";
   byId("ai-result-wrap").hidden = true;
@@ -988,17 +1033,18 @@ async function generateAiCases() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ topic: byId("ai-topic").value, requirement: byId("ai-requirement").value.trim(), model: byId("ai-model").value, ...aiCredentials() }),
+      signal: AbortSignal.timeout(40_000),
     });
     const result = await response.json();
     const matched = typeof result.text === "string" && result.text.trim().length > 0 && typeof result.model === "string";
-    aiRequestEvidence = { status: response.status, model: result.model || "Not returned", elapsed: Math.round(performance.now() - started), matched };
-    if (!response.ok) throw new Error(result.message || "Gemini request failed.");
+    aiRequestEvidence = { status: response.status, model: result.model || "Not returned", elapsed: Math.round(performance.now() - started), matched, diagnostic: result.diagnostic, error: result.error, warning: result.warning };
+    if (!response.ok) throw new Error(aiErrorText(result));
     if (!matched) throw new Error("Gemini returned no usable text or model ID.");
     byId("ai-result").textContent = result.text;
     byId("ai-result-wrap").hidden = false;
     aiDraftReady = true;
     updateAiEvidence();
-    byId("ai-status").textContent = "Draft ready. Check its assertions and run the test before reporting a pass.";
+    byId("ai-status").textContent = result.warning || "Draft ready. Check its assertions and run the test before reporting a pass.";
   } catch (error) {
     aiDraftReady = false;
     if (!aiRequestEvidence) aiRequestEvidence = { status: "No response", elapsed: Math.round(performance.now() - started), matched: false, model: "Unknown" };
@@ -1006,12 +1052,14 @@ async function generateAiCases() {
     byId("ai-status").textContent = error.message || "Gemini request failed.";
     toast(byId("ai-status").textContent, true);
   } finally {
+    aiBusy = false;
     updateAiMode();
   }
 }
 
 function updateAiEvidence() {
   const checks = [...byId("view-ai").querySelectorAll(".checklist input")];
+  checks.forEach((box) => { box.disabled = aiBusy || !aiDraftReady; });
   const reviewed = checks.filter((box) => box.checked).length;
   const done = aiDraftReady && reviewed === checks.length;
   const request = aiRequestEvidence;
@@ -1019,12 +1067,21 @@ function updateAiEvidence() {
     ["Generation HTTP status", "200", String(request?.status || "Not called"), request ? request.status === 200 ? "PASS" : "FAIL" : "NOT RUN"],
     ["Draft response contract", "Nonempty text and model ID", request?.matched ? "Matched" : "No valid draft", request ? request.matched ? "PASS" : "FAIL" : "NOT RUN"],
     ["Generation duration", "No configured limit", request ? `${request.elapsed} ms` : "Not called", "INFO"],
+    ...(request?.diagnostic ? [
+      ["Failure source", "Distinguish QA Lab, provider and connection errors", request.diagnostic.source || "Unknown", "INFO"],
+      ["Gemini HTTP status", "200 with usable text", String(request.diagnostic.providerStatus ?? "No provider response"), "INFO"],
+      ["Provider code / key restriction", "No error", [request.error, request.diagnostic.providerCode, request.diagnostic.reason].filter(Boolean).join(" / "), "INFO"],
+      ["Suggested action", "Resolve the identified layer", request.diagnostic.action || "Check connection and configuration", "INFO"],
+    ] : []),
+    ...(request?.warning ? [["Draft completeness", "Complete response", request.warning, "WARNING"]] : []),
     ["Human review", `${checks.length} / ${checks.length} self-reported checks`, `${reviewed} / ${checks.length}`, done ? "REVIEWED" : "PENDING"],
     ["Generated test execution", "Actual assertions must pass in the relevant tool", "No execution evidence is collected by this AI page", "NOT VERIFIED"],
   ]);
 }
 
 async function loadCiStatus() {
+  if (ciPending) return;
+  ciPending = true;
   byId("ci-refresh").disabled = true;
   showCiEvidence([["Latest run", "Loading"], ["State", "Checking"], ["Updated", "–"]], "Checking the latest public GitHub Actions run...");
   try {
@@ -1041,20 +1098,25 @@ async function loadCiStatus() {
     let totalJobs = null;
     if (jobResponse.ok) {
       const data = await jobResponse.json();
+      if (!Array.isArray(data.jobs) || !Number.isInteger(data.total_count) || data.total_count < data.jobs.length) throw new Error("GitHub returned an invalid job listing; no complete verdict is available");
       const jobs = data.jobs || [];
       totalJobs = data.total_count;
       for (const job of jobs) {
         const state = job.status === "completed" ? job.conclusion : job.status;
         if (classify(state) === "FAIL") failed += 1;
         checks.push([`Job: ${job.name}`, "completed / success", `${job.status} / ${job.conclusion || "–"}`, classify(state)]);
+        if (classify(state) === "PASS" && (!Array.isArray(job.steps) || !job.steps.length)) checks.push([`${job.name} step details`, "Steps from GitHub", "Missing", "UNAVAILABLE"]);
         for (const step of job.steps || []) checks.push([`${job.name} · ${step.name}`, "success; conditional steps may be skipped", step.conclusion || step.status, classify(step.conclusion || step.status)]);
       }
       if (jobs.length < totalJobs) checks.push(["Job listing", `All ${totalJobs} jobs`, `${jobs.length} loaded`, "PARTIAL"]);
     } else checks.push(["Job details", "GitHub job/step response", `HTTP ${jobResponse.status}`, "UNAVAILABLE"]);
-    showCiEvidence([["Latest run", `#${run.run_number}`], ["State", status], ["Failed jobs", totalJobs === null ? "Unavailable" : `${failed} / ${totalJobs}`], ["Commit / branch", `${run.head_sha.slice(0, 7)} / ${run.head_branch}`]], `${decision} · ${run.name} · updated ${readableTime(run.updated_at)}. Conditional skipped steps do not fail the workflow.`, decision === "PASS" ? "pass" : decision === "FAIL" ? "fail" : "", checks);
+    const overall = checks.some((row) => row[3] === "FAIL") ? "FAIL"
+      : checks.some((row) => ["PARTIAL", "UNAVAILABLE"].includes(row[3])) || totalJobs === 0 ? "INCOMPLETE"
+        : checks.some((row) => row[3] === "PENDING") ? "PENDING" : decision;
+    showCiEvidence([["Latest run", `#${run.run_number}`], ["State", status], ["Failed jobs", totalJobs === null ? "Unavailable" : `${failed} / ${totalJobs}`], ["Commit / branch", `${run.head_sha.slice(0, 7)} / ${run.head_branch}`]], `${overall} · ${run.name} · updated ${readableTime(run.updated_at)}. Conditional skipped steps do not fail the workflow.`, overall === "PASS" ? "pass" : overall === "FAIL" ? "fail" : "", checks);
   } catch (error) {
     showCiEvidence([["Latest run", "Unavailable"], ["State", "Unknown"], ["Updated", "–"]], `${error.message}. Open Actions for the authoritative result.`);
-  } finally { byId("ci-refresh").disabled = false; }
+  } finally { ciPending = false; byId("ci-refresh").disabled = false; }
 }
 
 document.querySelectorAll(".topic-link").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.view)));
@@ -1073,8 +1135,10 @@ byId("summary-file").addEventListener("change", (event) => { importSummary(event
 byId("unit-form").addEventListener("submit", runUnit);
 byId("unit-form").addEventListener("input", () => { byId("unit-result").textContent = "Inputs changed. Evaluate again."; byId("unit-result").className = "result-line"; showUnitEvidence([], "NOT RUN · Inputs changed; evaluate to see a new result."); });
 byId("api-preset").addEventListener("change", () => { updateApiPreset(); showApiEvidence([], "NOT RUN · Request changed; send it to measure a new response."); });
+byId("api-body").addEventListener("input", () => showApiEvidence([], "NOT RUN · Request body changed; send it to measure a new response."));
 byId("send-api").addEventListener("click", sendApiRequest);
 byId("plan-form").addEventListener("submit", reviewPlan);
+byId("plan-form").addEventListener("input", () => { e2eResult = null; showE2eEvidence([], "NOT RUN · Plan fields changed; review and save again."); });
 byId("plan-back").addEventListener("click", () => showPlanStep(1));
 byId("plan-save").addEventListener("click", savePlan);
 byId("plan-new").addEventListener("click", () => { byId("plan-form").reset(); e2eResult = null; showE2eEvidence([], "NOT RUN · New plan workflow."); showPlanStep(1); });
@@ -1084,11 +1148,11 @@ byId("ai-build").addEventListener("click", buildAiPrompt);
 byId("ai-copy").addEventListener("click", () => { if (buildAiPrompt()) copyText(byId("ai-output").value); });
 byId("ai-generate").addEventListener("click", generateAiCases);
 byId("ai-copy-result").addEventListener("click", () => copyText(byId("ai-result").textContent));
-byId("ai-mode-group").addEventListener("click", () => { aiMode = "group"; updateAiMode(); });
-byId("ai-mode-personal").addEventListener("click", () => { aiMode = "personal"; updateAiMode(); });
+byId("ai-mode-group").addEventListener("click", () => { aiMode = "group"; invalidateAiDraft(); updateAiMode(); });
+byId("ai-mode-personal").addEventListener("click", () => { aiMode = "personal"; invalidateAiDraft(); updateAiMode(); });
 byId("ai-personal-key").addEventListener("input", updateAiMode);
 byId("ai-load-models").addEventListener("click", loadAiModels);
-byId("ai-model").addEventListener("change", updateAiEvidence);
+for (const id of ["ai-topic", "ai-requirement", "ai-model", "ai-personal-key", "ai-access-code"]) byId(id).addEventListener("input", invalidateAiDraft);
 byId("view-ai").querySelectorAll(".checklist input").forEach((box) => box.addEventListener("change", updateAiEvidence));
 window.addEventListener("hashchange", syncRoute);
 window.addEventListener("resize", () => { if (byId("view-mobile").classList.contains("active")) measureMobile(); });

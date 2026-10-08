@@ -5,9 +5,15 @@ export function percentile(values, percentileValue) {
   return Math.round(sorted[Math.max(0, index)] * 100) / 100;
 }
 
+export function parseMetric(value) {
+  if (typeof value === "number") return value;
+  if (typeof value !== "string" || !/^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i.test(value.trim())) return NaN;
+  return Number(value);
+}
+
 export function evaluateThresholds(input) {
   const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
-  const parse = (value) => value === null || value === undefined || value === "" ? NaN : Number(value);
+  const parse = parseMetric;
   const p95Ms = parse(source.p95Ms);
   const errorRate = parse(source.errorRate);
   const p95LimitMs = parse(source.p95LimitMs);

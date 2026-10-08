@@ -17,11 +17,11 @@ export function parseConnectUri(value, allowedOrigin = DEFAULT_BRIDGE_ORIGIN) {
 }
 
 export function createBridgeSession({ origin = DEFAULT_BRIDGE_ORIGIN, code = randomBytes(18).toString("base64url") } = {}) {
-  const tokens = new Set([code]);
+  const tokens = new Set();
   return {
     origin,
     code,
-    accepts: (token) => tokens.has(token),
+    accepts: (token) => token === code || tokens.has(token),
     pair(request) {
       const pair = parseConnectUri(`qalab://connect?${new URLSearchParams(request)}`, origin);
       tokens.add(pair.token);

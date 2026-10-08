@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { perfScenarios } from "./perf-scenarios.js";
-import { scenarioWithPeak } from "../../public/shared/perf-profile.js";
+import { scenarioWithPeak, soakSteadySeconds } from "../../public/shared/perf-profile.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const resultsDir = path.join(root, "results");
@@ -101,7 +101,10 @@ export function createLocalPerfRunner({
       for (const stream of [child.stdout, child.stderr]) {
         stream.on("data", (chunk) => { log = (log + chunk.toString()).slice(-6000); });
       }
-      const timeout = setTimeout(() => child.kill(), 180_000);
+      const duration = perfScenarios[run.scenario].stages.reduce((sum, stage) => sum + stage.seconds, 0)
+        + (run.scenario === "soak" ? soakSteadySeconds(process.env.SOAK_STEADY || "90s") - 90 : 0);
+      let timedOut = false;
+      const timeout = setTimeout(() => { timedOut = true; child.kill(); }, (duration + 60) * 1000);
       const { code, error } = await new Promise((resolve) => {
         let launchError = null;
         child.on("error", (cause) => { launchError = cause; });
@@ -109,6 +112,7 @@ export function createLocalPerfRunner({
       });
       clearTimeout(timeout);
       run.exitCode = code;
+      if (timedOut) throw new Error("k6 exceeded the scenario duration plus 60 seconds. Check the local process and retry.");
       if (error) throw error;
       const summary = JSON.parse(await readFile(output, "utf8"));
       if (!validSummary(summary)) throw new Error("k6 did not return a valid summary.");
@@ -133,6 +137,7 @@ export function createLocalPerfRunner({
     if (!installed) return { ok: false, status: 503, error: "k6_missing", message: "Install Grafana k6, then restart QA Lab." };
     try {
       scenarioWithPeak(scenario, perfScenarios[scenario], peakVus);
+      if (scenario === "soak") soakSteadySeconds(process.env.SOAK_STEADY || "90s");
     } catch {
       return { ok: false, status: 400, error: "invalid_run", message: "Choose a scenario and a whole-number peak VU count." };
     }

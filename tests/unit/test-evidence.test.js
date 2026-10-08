@@ -57,4 +57,11 @@ describe("local connection links", () => {
     expect(session.accepts("manual")).toBe(true);
     expect(session.accepts("unknown")).toBe(false);
   });
+  it("preserves the manual pairing code while rotating old tab tokens", () => {
+    const session = createBridgeSession({ origin, code: "manual" });
+    for (let i = 0; i < 10; i += 1) session.pair({ origin, token: i.toString(16).repeat(64) });
+    expect(session.accepts("manual")).toBe(true);
+    expect(session.accepts("0".repeat(64))).toBe(false);
+    expect(session.accepts("9".repeat(64))).toBe(true);
+  });
 });

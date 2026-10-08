@@ -8,10 +8,54 @@ beforeEach(() => { app = createApp(); });
 afterEach(() => vi.unstubAllEnvs());
 
 describe("QA Lab API", () => {
+  it("reports the actual configured Soak duration without changing global defaults", async () => {
+    vi.stubEnv("SOAK_STEADY", "3m");
+    expect((await request(app).get("/api/perf/scenarios")).body.scenarios.soak.stages[1].seconds).toBe(180);
+    vi.stubEnv("SOAK_STEADY", "90s");
+    expect((await request(app).get("/api/perf/scenarios")).body.scenarios.soak.stages[1].seconds).toBe(90);
+    vi.stubEnv("SOAK_STEADY", "broken");
+    expect((await request(app).get("/api/perf/scenarios")).body.error).toBe("invalid_soak_duration");
+  });
+  it("rejects coerced metrics and plan fields at the HTTP boundary", async () => {
+    const metrics = await request(app).post("/api/evaluate").send({ p95Ms: false, errorRate: [], p95LimitMs: 500, errorLimit: 0.01 });
+    expect(metrics.status).toBe(400);
+    expect(Object.keys(metrics.body.fields)).toEqual(["p95Ms", "errorRate"]);
+    expect((await request(app).post("/api/plans").send({ name: {}, scenario: "stress", targetVus: true })).status).toBe(400);
+  });
+  it("returns safe no-store JSON for oversized bodies and internal runner failures", async () => {
+    const oversized = await request(app).post("/api/evaluate").send({ padding: "X".repeat(17_000) });
+    expect(oversized.status).toBe(413);
+    expect(oversized.body.error).toBe("body_too_large");
+    expect(oversized.headers["cache-control"]).toBe("no-store");
+    const broken = createApp({ perfRunner: { latest: async () => { throw new Error("private-path-and-secret"); } } });
+    const result = await request(broken).get("/api/perf/runs/latest");
+    expect(result.status).toBe(500);
+    expect(result.body.error).toBe("internal_error");
+    expect(JSON.stringify(result.body)).not.toContain("private-path-and-secret");
+  });
+  it("publishes safe upstream diagnostics for both AI routes", async () => {
+    const key = "fake-personal-key-long-enough";
+    const broken = createApp({ aiFetch: async () => new Response(JSON.stringify({ error: { status: "NOT_FOUND", message: key } }), { status: 404 }) });
+    for (const route of ["models", "generate"]) {
+      const result = await request(broken).post(`/api/ai/${route}`).send({ mode: "personal", apiKey: key, model: "gemini-test", topic: "unit", requirement: "Check threshold equality" });
+      expect(result.status).toBe(502);
+      expect(result.body).toMatchObject({ error: "ai_model_unavailable", diagnostic: { providerStatus: 404, providerCode: "NOT_FOUND" } });
+      expect(JSON.stringify(result.body)).not.toContain(key);
+    }
+  });
+  it("rate-limits model loading independently from generation", async () => {
+    const fetch = vi.fn(async () => new Response(JSON.stringify({ models: [] })));
+    const modelApp = createApp({ aiFetch: fetch });
+    for (let i = 0; i < 30; i += 1) expect((await request(modelApp).post("/api/ai/models").send({ mode: "personal", apiKey: "fake-personal-key-long-enough" })).status).toBe(200);
+    const limited = await request(modelApp).post("/api/ai/models").send({ mode: "personal", apiKey: "fake-personal-key-long-enough" });
+    expect(limited.status).toBe(429);
+    expect(limited.body.diagnostic.source).toBe("QA Lab protection");
+    expect(fetch).toHaveBeenCalledTimes(30);
+  });
   it("identifies the deployed version and never caches mutable app assets", async () => {
     vi.stubEnv("RENDER_GIT_COMMIT", "a".repeat(40));
     const version = await request(app).get("/api/version");
-    expect(version.body).toEqual({ version: "1.1.0", commit: "a".repeat(40) });
+    expect(version.body).toEqual({ version: "1.1.1", commit: "a".repeat(40) });
     expect(version.headers["cache-control"]).toBe("no-store");
     for (const asset of ["/", "/app.js", "/styles.css", "/shared/test-evidence.js", "/vendor/html2canvas.js", "/some-route"]) {
       const result = await request(app).get(asset);

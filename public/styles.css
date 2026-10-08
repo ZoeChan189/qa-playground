@@ -53,6 +53,7 @@ code { overflow-wrap: anywhere; }
 .local-dot, .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
 .sidebar-bottom a { grid-column: 1 / -1; display: inline-flex; align-items: center; gap: 5px; color: var(--teal-dark); text-decoration: none; font-weight: 700; }
 .sidebar-bottom a img { width: 13px; height: 13px; }
+#release-version { grid-column: 1 / -1; margin: 0; line-height: 1.5; overflow-wrap: anywhere; }
 
 .main-shell { min-width: 0; }
 .topbar { position: sticky; z-index: 5; top: 0; display: flex; justify-content: space-between; align-items: center; min-height: 54px; padding: 10px clamp(18px, 3vw, 40px); border-bottom: 1px solid var(--line); background: rgba(255,255,255,.97); }

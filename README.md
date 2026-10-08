@@ -30,6 +30,8 @@ Every topic has an **Expected / limit**, **Observed**, **Result** table. Unit **
 
 See [the case matrix](docs/demo-cases.md) and [the performance guide](docs/performance.md) for class demonstrations and interpretation.
 
+Version **1.1.1** adds stricter input validation, safe Gemini diagnostics, current-input evidence invalidation, correct long-Soak phase timing, and dependency/security fixes. See [the Vietnamese audit and error catalogue](docs/audit-2026-10-08.md) for verified cases, remaining limits, and fixes by topic.
+
 ## Automated tests
 
 ```bash

@@ -10,14 +10,14 @@ import { validatePlan } from "../public/shared/plan-rules.js";
 import { perfScenarios } from "./domain/perf-scenarios.js";
 import { aiTopics, generateAiCases, listGeminiModels, validGeminiModel } from "./domain/ai-assistant.js";
 import { createLocalPerfRunner } from "./domain/local-perf-runner.js";
-import { scenarioWithPeak } from "../public/shared/perf-profile.js";
+import { scenarioWithPeak, soakSteadySeconds } from "../public/shared/perf-profile.js";
 
 const deriveKey = promisify(pbkdf2);
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.resolve(currentDir, "../public");
 const appVersion = JSON.parse(readFileSync(path.resolve(currentDir, "../package.json"), "utf8")).version;
 const iconsDir = path.resolve(currentDir, "../node_modules/lucide-static/icons");
-const maxInflight = Math.max(1, Math.min(64, Number(process.env.PERF_MAX_INFLIGHT) || 24));
+const maxInflight = Math.max(1, Math.min(64, Math.floor(Number(process.env.PERF_MAX_INFLIGHT) || 24)));
 
 function createTelemetry() {
   const durations = [];
@@ -70,17 +70,19 @@ export function createApp({ aiFetch = fetch, perfRunner = createLocalPerfRunner(
   let aiWindowStart = Date.now();
   let aiWindowCount = 0;
   let aiInflight = 0;
+  let modelWindowStart = Date.now();
+  let modelWindowCount = 0;
   const publicWorkLimit = process.env.NODE_ENV === "production" ? 2 : Infinity;
   let publicWindowStart = Date.now();
   let publicWindowCount = 0;
 
   app.disable("x-powered-by");
-  app.use(express.json({ limit: "16kb" }));
   app.use((request, response, next) => {
-    if (request.path.startsWith("/api/")) response.setHeader("Cache-Control", "no-store");
+    if (request.path.startsWith("/api/") || request.path.startsWith("/local-bridge")) response.setHeader("Cache-Control", "no-store");
     response.setHeader("X-Content-Type-Options", "nosniff");
     next();
   });
+  app.use(express.json({ limit: "16kb" }));
 
   app.get("/api/health", (_request, response) => {
     response.json({ status: "ready", service: "qa-lab" });
@@ -92,7 +94,11 @@ export function createApp({ aiFetch = fetch, perfRunner = createLocalPerfRunner(
   });
 
   app.get("/api/perf/scenarios", (_request, response) => {
-    response.json({ scenarios: perfScenarios, target: "/api/perf/work", localOnlyByDefault: true });
+    try {
+      const hold = soakSteadySeconds(process.env.SOAK_STEADY || "90s");
+      const soak = { ...perfScenarios.soak, stages: perfScenarios.soak.stages.map((stage, index) => index === 1 ? { ...stage, seconds: hold } : stage) };
+      response.json({ scenarios: { ...perfScenarios, soak }, target: "/api/perf/work", localOnlyByDefault: true });
+    } catch (error) { response.status(400).json({ error: "invalid_soak_duration", message: error.message }); }
   });
 
   app.get("/api/perf/metrics", (_request, response) => {
@@ -254,23 +260,36 @@ export function createApp({ aiFetch = fetch, perfRunner = createLocalPerfRunner(
     return { key: aiKey };
   }
 
+  function rejectAi(response, status, error, message, action, source = "QA Lab validation") {
+    return response.status(status).json({ error, message, diagnostic: { source, providerStatus: null, action } });
+  }
+
   app.post("/api/ai/models", async (request, response) => {
     const credentials = aiCredentials(request.body);
-    if (!credentials) return response.status(403).json({ error: "ai_access_denied", message: "Enter a valid group code or personal API key." });
-    const result = await listGeminiModels({ apiKey: credentials.key, fetchImpl: aiFetch });
-    return response.status(result.ok ? 200 : result.status).json(result.ok ? { models: result.models } : { error: "model_list_failed", message: result.message });
+    if (!credentials) return rejectAi(response, 403, "ai_access_denied", "Enter a valid group code or personal API key.", "Check the selected mode and credentials. QA Lab has not contacted Gemini.");
+    if (Date.now() - modelWindowStart >= 3_600_000) { modelWindowStart = Date.now(); modelWindowCount = 0; }
+    if (modelWindowCount >= 30 || aiInflight >= 2) {
+      response.setHeader("Retry-After", modelWindowCount >= 30 ? String(Math.ceil((3_600_000 - (Date.now() - modelWindowStart)) / 1000)) : "10");
+      return response.status(429).json({ error: "ai_rate_limit", message: "QA Lab model listing is busy or reached its hourly limit.", diagnostic: { source: "QA Lab protection", action: "Wait before loading models again. This is not a Gemini quota response." } });
+    }
+    modelWindowCount += 1;
+    aiInflight += 1;
+    try {
+      const result = await listGeminiModels({ apiKey: credentials.key, fetchImpl: aiFetch });
+      return response.status(result.ok ? 200 : result.status).json(result.ok ? { models: result.models } : { error: result.error, message: result.message, diagnostic: result.diagnostic });
+    } finally { aiInflight -= 1; }
   });
 
   app.post("/api/ai/generate", async (request, response) => {
     const { topic, requirement, model } = request.body ?? {};
     if (!aiTopics.has(topic) || typeof requirement !== "string" || requirement.trim().length < 10 || requirement.trim().length > 500) {
-      return response.status(400).json({ error: "invalid_ai_request", message: "Choose a topic and enter a requirement of 10 to 500 characters." });
+      return rejectAi(response, 400, "invalid_ai_request", "Choose a topic and enter a requirement of 10 to 500 characters.", "Correct the topic or requirement before generating. Gemini has not been called.");
     }
-    if (request.body?.mode !== "personal" && !aiAvailable) return response.status(503).json({ error: "ai_not_configured", message: "Gemini is not configured on this server." });
+    if (request.body?.mode !== "personal" && !aiAvailable) return rejectAi(response, 503, "ai_not_configured", "Gemini is not configured on this server.", "Configure the server's group key/access code, or use My API key.", "QA Lab configuration");
     const credentials = aiCredentials(request.body);
-    if (!credentials) return response.status(403).json({ error: "ai_access_denied", message: "Enter a valid group code or personal API key." });
-    const chosenModel = model || aiModel;
-    if (!validGeminiModel(chosenModel)) return response.status(400).json({ error: "invalid_model", message: "Choose a Gemini text model." });
+    if (!credentials) return rejectAi(response, 403, "ai_access_denied", "Enter a valid group code or personal API key.", "Check the selected mode and credentials. QA Lab has not contacted Gemini.");
+    const chosenModel = model ?? aiModel;
+    if (!validGeminiModel(chosenModel)) return rejectAi(response, 400, "invalid_model", "Choose a Gemini text model.", "Load available text models and choose one from the list. Gemini has not been called.");
     const now = Date.now();
     if (now - aiWindowStart >= 3_600_000) {
       aiWindowStart = now;
@@ -278,23 +297,28 @@ export function createApp({ aiFetch = fetch, perfRunner = createLocalPerfRunner(
     }
     if (aiWindowCount >= 20 || aiInflight >= 2) {
       response.setHeader("Retry-After", aiWindowCount >= 20 ? String(Math.ceil((3_600_000 - (now - aiWindowStart)) / 1000)) : "10");
-      return response.status(429).json({ error: "ai_rate_limit", message: "AI demo is busy or has reached its hourly limit. Try again later." });
+      return response.status(429).json({ error: "ai_rate_limit", message: "AI demo is busy or has reached its hourly limit. Try again later.", diagnostic: { source: "QA Lab protection", action: "Wait for the Retry-After period. This limit is on QA Lab, not proof of a Gemini provider error." } });
     }
     aiWindowCount += 1;
     aiInflight += 1;
     try {
       const result = await generateAiCases({ topic, requirement: requirement.trim(), apiKey: credentials.key, model: chosenModel, fetchImpl: aiFetch });
-      if (!result.ok) return response.status(result.status).json({ error: result.error, message: result.message });
-      return response.json({ text: result.text, model: result.model });
+      if (!result.ok) return response.status(result.status).json({ error: result.error, message: result.message, diagnostic: result.diagnostic });
+      return response.json({ text: result.text, model: result.model, ...(result.warning ? { warning: result.warning } : {}) });
     } finally {
       aiInflight -= 1;
     }
   });
 
   app.use("/api", (_request, response) => response.status(404).json({ error: "not_found" }));
-  app.use((error, _request, response, next) => {
+  app.use((error, request, response, next) => {
+    if (response.headersSent) return next(error);
     if (error instanceof SyntaxError && "body" in error) {
       return response.status(400).json({ error: "invalid_json", message: "Request body must be valid JSON." });
+    }
+    if (error.type === "entity.too.large") return response.status(413).json({ error: "body_too_large", message: "Request body exceeds the 16 KB limit." });
+    if (request.path.startsWith("/api/") || request.path.startsWith("/local-bridge")) {
+      return response.status(500).json({ error: "internal_error", message: "QA Lab encountered an internal error. Retry, then report the endpoint and time if it continues.", diagnostic: { source: "QA Lab server" } });
     }
     return next(error);
   });

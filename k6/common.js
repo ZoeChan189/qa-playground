@@ -3,7 +3,7 @@ import { check, sleep } from "k6";
 import exec from "k6/execution";
 import { Counter, Gauge, Rate, Trend } from "k6/metrics";
 import { perfScenarios } from "../src/domain/perf-scenarios.js";
-import { scenarioWithPeak } from "../public/shared/perf-profile.js";
+import { scenarioWithPeak, soakSteadySeconds } from "../public/shared/perf-profile.js";
 
 const baseUrl = (__ENV.BASE_URL || "http://127.0.0.1:4173").replace(/\/$/, "");
 const localTarget = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/.test(baseUrl);
@@ -41,7 +41,7 @@ function currentPhase(profile) {
     return "recovery";
   }
   if (profile === "spike") return seconds < 4 ? "baseline" : seconds < 14 ? "burst" : "recovery";
-  const steadySeconds = Number.parseFloat(__ENV.SOAK_STEADY || "90");
+  const steadySeconds = soakSteadySeconds(__ENV.SOAK_STEADY || "90s");
   if (seconds < 5 || seconds >= 5 + steadySeconds) return null;
   if (seconds < 5 + steadySeconds * 0.25) return "early";
   if (seconds >= 5 + steadySeconds * 0.75) return "late";
@@ -52,7 +52,7 @@ export function optionsFor(profile) {
   const baseConfig = perfScenarios[profile];
   const config = scenarioWithPeak(profile, baseConfig, __ENV.PERF_PEAK_VUS ? Number(__ENV.PERF_PEAK_VUS) : baseConfig.peakVus);
   const stages = config.stages.map((stage, index) => ({
-    duration: profile === "soak" && index === 1 ? (__ENV.SOAK_STEADY || `${stage.seconds}s`) : `${stage.seconds}s`,
+    duration: profile === "soak" && index === 1 ? `${soakSteadySeconds(__ENV.SOAK_STEADY || `${stage.seconds}s`)}s` : `${stage.seconds}s`,
     target: stage.vus,
   }));
   return {
