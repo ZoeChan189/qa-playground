@@ -1,5 +1,6 @@
 @echo off
 cd /d "%~dp0"
+for /f "usebackq delims=" %%P in (`powershell.exe -NoProfile -Command "[Environment]::GetEnvironmentVariable('Path','User') + ';' + [Environment]::GetEnvironmentVariable('Path','Machine')"`) do set "PATH=%%P"
 where node >nul 2>nul
 if errorlevel 1 goto missing_node
 where npm >nul 2>nul

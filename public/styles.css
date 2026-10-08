@@ -175,6 +175,15 @@ textarea { resize: vertical; line-height: 1.5; }
 .detail-table td:nth-child(3) { color: var(--muted); }
 .threshold-pass { color: var(--green); font-weight: 800; }
 .threshold-fail { color: var(--coral); font-weight: 800; }
+.decision-table td { white-space: normal !important; overflow-wrap: anywhere; }
+.decision-table td:last-child { min-width: 90px; }
+.evidence-panel .table-wrap { margin-top: 12px; }
+.visual-reference { position: absolute; top: 0; left: -10000px; margin: 0 !important; }
+#visual-compare { margin: 12px 0; }
+.bridge-controls details { width: 100%; }
+.bridge-controls summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+.bridge-controls details label { margin: 12px 0; max-width: 420px; }
+#unit-key-cases { margin-left: 8px; }
 
 .form-surface { max-width: 770px; padding: 22px; border: 1px solid var(--line); border-radius: 6px; background: white; }
 .form-surface label { margin-bottom: 15px; }
@@ -279,9 +288,26 @@ textarea { resize: vertical; line-height: 1.5; }
   .detail-table tr:last-child, .threshold-table tr:last-child { border-bottom: 0; }
   .detail-table td, .threshold-table td { min-width: 0; padding: 7px 11px; border: 0; white-space: normal; }
   .detail-table td:nth-child(2) { text-align: right; white-space: normal; }
+  .detail-table tr { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .detail-table td { overflow-wrap: anywhere; }
   .detail-table td:nth-child(3), .threshold-table td:nth-child(3) { grid-column: 1 / -1; padding-top: 0; }
   .threshold-table td:nth-child(2) { text-align: right; }
   .threshold-table td:nth-child(4) { grid-column: 1 / -1; padding-top: 0; }
+  .decision-table, .decision-table tbody { display: block; min-width: 0; width: 100%; }
+  .decision-table thead { display: none; }
+  .decision-table tr { display: block; border-bottom: 1px solid var(--line); padding: 8px 11px; }
+  .decision-table td { display: block; border: 0; padding: 3px 0; font-size: 12px; }
+  .decision-table td:nth-child(2)::before { content: "Expected: "; color: var(--muted); }
+  .decision-table td:nth-child(3)::before { content: "Observed: "; color: var(--muted); }
+  .decision-table td:nth-child(4)::before { content: "Result: "; }
+  .phase-table, .phase-table tbody { display: block; min-width: 0; width: 100%; }
+  .phase-table thead { display: none; }
+  .phase-table tr { display: block; padding: 8px 11px; border-bottom: 1px solid var(--line); }
+  .phase-table td { display: block; border: 0; padding: 3px 0; }
+  .phase-table td:nth-child(2)::before { content: "Requests: "; color: var(--muted); }
+  .phase-table td:nth-child(3)::before { content: "p95: "; color: var(--muted); }
+  .phase-table td:nth-child(4)::before { content: "Error rate: "; color: var(--muted); }
+  .phase-table td:nth-child(5)::before { content: "Stage limits: "; color: var(--muted); }
   .form-grid { grid-template-columns: 1fr; }
   .evidence-grid { grid-template-columns: 1fr; }
   .evidence-grid > div { border-right: 0; border-bottom: 1px solid var(--line); }

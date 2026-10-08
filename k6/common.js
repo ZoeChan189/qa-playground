@@ -14,6 +14,10 @@ if (!localTarget && __ENV.ALLOW_REMOTE_LOAD !== "1") {
 const serverHeap = new Gauge("server_heap_used_mb");
 const serverActive = new Gauge("server_active_jobs");
 const configuredPeak = new Gauge("configured_peak_vus");
+const configuredLatencyLimit = new Gauge("configured_p95_limit_ms");
+const configuredErrorLimit = new Gauge("configured_error_limit");
+const invalidSuccess = new Counter("invalid_success_responses");
+const successfulLatency = new Trend("successful_response_duration_ms", true);
 const status200 = new Counter("http_status_200");
 const status503 = new Counter("http_status_503");
 const statusOther = new Counter("http_status_other");
@@ -56,6 +60,7 @@ export function optionsFor(profile) {
     thresholds: {
       http_req_duration: [`p(95)<${config.p95LimitMs}`],
       http_req_failed: [`rate<${config.errorLimit}`],
+      invalid_success_responses: ["count<1"],
     },
   };
 }
@@ -63,6 +68,9 @@ export function optionsFor(profile) {
 export function exercise(profile) {
   const config = perfScenarios[profile];
   configuredPeak.add(__ENV.PERF_PEAK_VUS ? Number(__ENV.PERF_PEAK_VUS) : config.peakVus);
+  configuredLatencyLimit.add(config.p95LimitMs);
+  configuredErrorLimit.add(config.errorLimit);
+  invalidSuccess.add(0);
   const phase = currentPhase(profile);
   const response = http.get(`${baseUrl}/api/perf/work?work=${config.work}`, {
     tags: { profile, phase: phase || "middle" },
@@ -81,14 +89,16 @@ export function exercise(profile) {
     "JSON response": (result) => result.headers["Content-Type"]?.includes("application/json"),
   });
   if (response.status === 200) {
+    successfulLatency.add(response.timings.duration);
     try {
       const body = response.json();
+      if (!response.headers["Content-Type"]?.includes("application/json") || body.ok !== true || body.iterations !== config.work * 1000 || !Number.isFinite(body.serviceMs) || body.serviceMs < 0) invalidSuccess.add(1);
       if (typeof body.heapUsedMb === "number") serverHeap.add(body.heapUsedMb, { profile });
       if (typeof body.activeJobs === "number") serverActive.add(body.activeJobs, { profile });
       if (profile === "soak" && phase === "early" && typeof body.heapUsedMb === "number") earlyHeap.add(body.heapUsedMb);
       if (profile === "soak" && phase === "late" && typeof body.heapUsedMb === "number") lateHeap.add(body.heapUsedMb);
     } catch {
-      // The JSON check above still reports the malformed response.
+      invalidSuccess.add(1);
     }
   }
   sleep(0.06);

@@ -57,7 +57,7 @@ function createTelemetry() {
   };
 }
 
-export function createApp({ aiFetch = fetch, perfRunner = createLocalPerfRunner(), bridgeCode = "", bridgeOrigin = "" } = {}) {
+export function createApp({ aiFetch = fetch, perfRunner = createLocalPerfRunner(), bridgeCode = "", bridgeOrigin = "", bridgeSession = null } = {}) {
   const app = express();
   const telemetry = createTelemetry();
   const plans = new Map();
@@ -133,7 +133,8 @@ export function createApp({ aiFetch = fetch, perfRunner = createLocalPerfRunner(
       response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
       response.setHeader("Access-Control-Allow-Headers", "Content-Type, X-QA-Bridge-Code");
       if (request.method === "OPTIONS") return response.sendStatus(204);
-      if (request.get("x-qa-bridge-code") !== bridgeCode) return response.status(401).json({ error: "bridge_code_invalid", message: "Pairing code is incorrect." });
+      const token = request.get("x-qa-bridge-code");
+      if (!(bridgeSession ? bridgeSession.accepts(token) : token === bridgeCode)) return response.status(401).json({ error: "bridge_code_invalid", message: "Pairing code is incorrect." });
       next();
     });
     app.get("/local-bridge/status", async (_request, response) => response.json(await perfRunner.latest()));
@@ -292,7 +293,8 @@ export function createApp({ aiFetch = fetch, perfRunner = createLocalPerfRunner(
   });
 
   app.use("/icons", express.static(iconsDir, { maxAge: "1d" }));
-  app.use(express.static(publicDir, { maxAge: "5m" }));
+  app.get("/vendor/html2canvas.js", (_request, response) => response.sendFile(path.resolve(currentDir, "../node_modules/html2canvas/dist/html2canvas.esm.js")));
+  app.use(express.static(publicDir, { maxAge: 0 }));
   app.get("/{*path}", (_request, response) => response.sendFile(path.join(publicDir, "index.html")));
 
   return app;

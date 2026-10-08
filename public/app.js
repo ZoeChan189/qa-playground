@@ -1,6 +1,7 @@
 import { evaluateThresholds } from "./shared/evaluation.js";
 import { validatePlan } from "./shared/plan-rules.js";
 import { MAX_LOCAL_PEAK_VUS, scenarioWithPeak } from "./shared/perf-profile.js";
+import { comparePixels, metricValue, perfDecision } from "./shared/test-evidence.js";
 
 const byId = (id) => document.getElementById(id);
 const topicNames = { performance: "Performance", unit: "Unit", api: "API", e2e: "Web E2E", mobile: "Mobile web", visual: "Visual", ai: "AI-assisted", ci: "CI/CD" };
@@ -48,6 +49,12 @@ let bridgeCode = "";
 let bridgeConnected = false;
 let aiMode = "group";
 let aiDraftReady = false;
+let connectPending = false;
+let aiRequestEvidence = null;
+let visualBusy = false;
+let visualBaseline = null;
+let visualGeneration = 0;
+let e2eResult = null;
 
 function createEvidence(topic, afterId, description) {
   const section = document.createElement("section");
@@ -63,9 +70,26 @@ function createEvidence(topic, afterId, description) {
   verdict.className = "result-line";
   verdict.setAttribute("role", "status");
   verdict.textContent = "NOT RUN · Run the check above to see measured values.";
-  section.append(heading, note, grid, verdict);
+  const wrapper = document.createElement("div");
+  wrapper.className = "table-wrap";
+  const table = document.createElement("table");
+  table.className = "case-table decision-table";
+  const header = document.createElement("thead");
+  const headerRow = document.createElement("tr");
+  for (const title of ["Check", "Expected / limit", "Observed", "Result"]) {
+    const cell = document.createElement("th");
+    cell.scope = "col";
+    cell.textContent = title;
+    headerRow.append(cell);
+  }
+  header.append(headerRow);
+  const rows = document.createElement("tbody");
+  table.append(header, rows);
+  wrapper.append(table);
+  wrapper.hidden = true;
+  section.append(heading, note, grid, verdict, wrapper);
   (byId(afterId) || document.querySelector(`.${afterId}`)).after(section);
-  return (metrics, message, status = "") => {
+  return (metrics, message, status = "", checks = []) => {
     grid.replaceChildren(...metrics.map(([label, value]) => {
       const cell = document.createElement("div");
       const title = document.createElement("span");
@@ -77,16 +101,38 @@ function createEvidence(topic, afterId, description) {
     }));
     verdict.className = `result-line ${status}`;
     verdict.textContent = message;
+    rows.replaceChildren(...checks.map((row) => tableRow(row, row[3] === "PASS" ? "threshold-pass" : row[3] === "FAIL" ? "threshold-fail" : "")));
+    wrapper.hidden = !checks.length;
   };
 }
 
 const showUnitEvidence = createEvidence("unit", "unit-form", "Function output; p95 and errors must both be strictly below their limits.");
 const showApiEvidence = createEvidence("api", "api-grid", "HTTP status and response contract are checked against the selected request.");
 const showE2eEvidence = createEvidence("e2e", "plan-step-3", "The UI flow passes after valid input is saved and the same plan is retrieved.");
-const showMobileEvidence = createEvidence("mobile", "mobile-measure", "This browser checks page-level overflow. Touch and full workflow need a mobile device or Playwright.");
-const showVisualEvidence = createEvidence("visual", "visual-specimen", "Live DOM-style comparison, not a Playwright screenshot diff.");
+const showMobileEvidence = createEvidence("mobile", "mobile-measure", "Measured at the current viewport: overflow and visible control sizes. Touch support is reported separately.");
+const showVisualEvidence = createEvidence("visual", "visual-specimen", "Browser image comparison against an unchanged reference at the same viewport. Maximum changed pixels: 0.1%; per-channel tolerance: 16 / 255.");
 const showAiEvidence = createEvidence("ai", "ai-result-wrap", "A generated draft is not a passing test; review and execution are separate.");
-const showCiEvidence = createEvidence("ci", "pipeline", "Latest public GitHub Actions run; check the linked run for individual test failures.");
+const showCiEvidence = createEvidence("ci", "pipeline", "Actual GitHub Actions status, jobs and steps from the latest workflow run.");
+
+const unitCasesButton = document.createElement("button");
+unitCasesButton.type = "button";
+unitCasesButton.className = "button secondary";
+unitCasesButton.id = "unit-key-cases";
+unitCasesButton.textContent = "Run key cases";
+byId("unit-form").append(unitCasesButton);
+byId("unit-form").noValidate = true;
+const ciRefresh = document.createElement("button");
+ciRefresh.type = "button";
+ciRefresh.className = "button secondary";
+ciRefresh.textContent = "Refresh results";
+ciRefresh.id = "ci-refresh";
+byId("view-ci").querySelector(".page-heading").append(ciRefresh);
+const visualCompare = document.createElement("button");
+visualCompare.type = "button";
+visualCompare.className = "button primary";
+visualCompare.id = "visual-compare";
+visualCompare.textContent = "Compare images";
+byId("view-visual").querySelector(".visual-toggle").after(visualCompare);
 
 function toast(message, error = false) {
   const node = document.createElement("div");
@@ -117,6 +163,7 @@ function showTopic(topic) {
   if (topic === "mobile") measureMobile();
   if (topic === "performance") { pollTelemetry(); pollLatestRun(); }
   if (topic === "ci") loadCiStatus();
+  if (topic === "visual") compareVisual();
 }
 
 function navigate(topic) {
@@ -294,11 +341,6 @@ async function runProbe() {
   }
 }
 
-function metricValue(summary, metric, key) {
-  const data = summary.metrics?.[metric];
-  return data?.values?.[key] ?? data?.[key];
-}
-
 function tableRow(values, lastClass = "") {
   const row = document.createElement("tr");
   values.forEach((value, index) => {
@@ -328,27 +370,26 @@ function clearSummary() {
 
 function renderSummary(summary, profile, source = {}) {
   const config = scenarios[profile];
-  const p95 = metricValue(summary, "http_req_duration", "p(95)");
-  const errorRate = metricValue(summary, "http_req_failed", "value") ?? metricValue(summary, "http_req_failed", "rate");
-  const requests = metricValue(summary, "http_reqs", "count");
-  if (!config || !Number.isFinite(p95) || !Number.isFinite(errorRate) || !Number.isFinite(requests)) {
-    throw new Error("Use a k6 summary exported by this project's perf command.");
-  }
-  selectScenario(profile, false);
-  history.replaceState(null, "", `#performance/${profile}`);
+  if (!config) throw new Error("Unknown performance scenario.");
+  const decision = perfDecision(summary, config, source.exitCode);
+  const { p95, errorRate, requests, p95LimitMs, errorLimit } = decision;
   const importedPeak = metricValue(summary, "configured_peak_vus", "value");
   const peak = Number.isInteger(importedPeak) && importedPeak >= (profile === "spike" ? 5 : 1) && importedPeak <= MAX_LOCAL_PEAK_VUS
     ? importedPeak : config.peakVus;
-  byId("perf-vus").value = peak;
-  updatePeak();
-  const verdict = evaluateThresholds({ p95Ms: p95, errorRate, p95LimitMs: config.p95LimitMs, errorLimit: config.errorLimit });
+  if (source.label?.startsWith("Opened")) {
+    selectScenario(profile, false);
+    history.replaceState(null, "", `#performance/${profile}`);
+    byId("perf-vus").value = peak;
+    updatePeak();
+  }
+  const verdict = { ...evaluateThresholds({ p95Ms: p95, errorRate, p95LimitMs, errorLimit }), passed: decision.passed };
   const heapMin = metricValue(summary, "server_heap_used_mb", "min");
   const heapMax = metricValue(summary, "server_heap_used_mb", "max");
   const peakActive = metricValue(summary, "server_active_jobs", "max");
   byId("summary-profile").textContent = config.label;
   byId("summary-requests").textContent = requests.toLocaleString();
-  byId("summary-p95").textContent = `${p95.toFixed(0)} ms`;
-  byId("summary-errors").textContent = `${(errorRate * 100).toFixed(1)}%`;
+  byId("summary-p95").textContent = `${p95.toFixed(2)} ms`;
+  byId("summary-errors").textContent = `${(errorRate * 100).toFixed(3)}%`;
   byId("summary-active").textContent = Number.isFinite(peakActive) ? String(Math.round(peakActive)) : "–";
   byId("summary-heap").textContent = Number.isFinite(heapMin) && Number.isFinite(heapMax) ? `${heapMin.toFixed(1)}–${heapMax.toFixed(1)} MB` : "–";
   byId("summary-verdict").textContent = verdict.passed ? "WITHIN LIMITS" : "LIMIT BREACHED";
@@ -356,7 +397,7 @@ function renderSummary(summary, profile, source = {}) {
   byId("perf-outcome").className = `outcome-bar ${verdict.passed ? "pass" : "fail"}`;
   const sourceKind = source.label?.startsWith("Latest saved run") ? "SAVED RESULT" : source.label?.startsWith("Opened") ? "IMPORTED RESULT" : "LATEST RUN";
   byId("perf-outcome-title").textContent = `${sourceKind} · ${verdict.passed ? "PASS" : "FAIL"}`;
-  byId("perf-outcome-detail").textContent = `${config.label} · ${requests.toLocaleString()} requests · p95 ${p95.toFixed(0)} / ${config.p95LimitMs} ms · errors ${(errorRate * 100).toFixed(1)} / ${(config.errorLimit * 100).toFixed(0)}% · ${readableTime(source.finishedAt)}`;
+  byId("perf-outcome-detail").textContent = `${config.label} · ${requests.toLocaleString()} requests · p95 ${p95.toFixed(2)} / ${p95LimitMs} ms · errors ${(errorRate * 100).toFixed(3)} / ${(errorLimit * 100).toFixed(2)}% · ${readableTime(source.finishedAt)}`;
   byId("summary-empty").hidden = true;
   byId("summary-result").hidden = false;
 
@@ -370,6 +411,7 @@ function renderSummary(summary, profile, source = {}) {
   const rows = [
     ["Completed at", readableTime(source.finishedAt), "Time this summary became available"],
     ["Configured peak", `${peak} VUs`, "Maximum planned virtual users"],
+    ["Run ID", source.id || "Imported", "Identifies this result; changes on every new test"],
     ["Requests per second", Number.isFinite(requestRate) ? requestRate.toFixed(1) : "–", "Average across the whole run"],
     ["Failed requests", whole(Number.isFinite(failedCount) ? failedCount : requests * errorRate), "HTTP requests counted as failed by k6"],
     ["HTTP 200", statusCount("http_status_200"), "Successful work responses"],
@@ -380,17 +422,19 @@ function renderSummary(summary, profile, source = {}) {
     ["Latency median", ms(metricValue(summary, "http_req_duration", "med")), "Half the requests are at or below this"],
     ["Latency p90", ms(metricValue(summary, "http_req_duration", "p(90)")), "90% of requests are at or below this"],
     ["Latency p95", ms(p95), "Compared with the scenario limit"],
+    ["HTTP 200 p95", ms(metricValue(summary, "successful_response_duration_ms", "p(95)")), "Successful responses only; fast rejections do not lower this value"],
     ["Latency max", ms(metricValue(summary, "http_req_duration", "max")), "Slowest recorded HTTP response"],
     ["Iterations", whole(metricValue(summary, "iterations", "count")), "Completed k6 virtual-user loops"],
     ["Data received", Number.isFinite(metricValue(summary, "data_received", "count")) ? `${(metricValue(summary, "data_received", "count") / 1048576).toFixed(2)} MB` : "–", "Total response data"],
+    ["k6 checks passed", whole(metricValue(summary, "checks", "passes")), "Assertions passed, including status and content type"],
+    ["k6 checks failed", whole(metricValue(summary, "checks", "fails")), "Assertions failed; admission rejections also fail the HTTP 200 check"],
+    ["Peak active jobs", whole(peakActive), "Observed active jobs; not the same as configured VUs"],
+    ["Heap min / max", byId("summary-heap").textContent, "Informational; no memory-leak verdict from this short run"],
   ];
   byId("detail-rows").replaceChildren(...rows.map((row) => tableRow(row)));
   byId("summary-source").textContent = `${source.label || "Imported k6 summary"} · ${readableTime(source.finishedAt)}`;
   byId("summary-detail").hidden = false;
-  byId("threshold-rows").replaceChildren(
-    tableRow(["p95 latency", ms(p95), `< ${config.p95LimitMs} ms`, verdict.checks.latencyPassed ? "PASS" : "FAIL"], verdict.checks.latencyPassed ? "threshold-pass" : "threshold-fail"),
-    tableRow(["Failed requests", `${(errorRate * 100).toFixed(2)}%`, `< ${(config.errorLimit * 100).toFixed(0)}%`, verdict.checks.errorsPassed ? "PASS" : "FAIL"], verdict.checks.errorsPassed ? "threshold-pass" : "threshold-fail"),
-  );
+  byId("threshold-rows").replaceChildren(...decision.checks.map(([name, expected, observed, status]) => tableRow([name, observed, expected, status], status === "PASS" ? "threshold-pass" : status === "FAIL" ? "threshold-fail" : "")));
 
   const importedConfig = scenarioWithPeak(profile, config, peak);
   const stressStage = { ramp5: 0, ramp12: 1, ramp24: 2, peak40: 3 };
@@ -400,7 +444,8 @@ function renderSummary(summary, profile, source = {}) {
     const phaseErrors = metricValue(summary, `phase_${name}_failed`, "value");
     const phaseRequests = metricValue(summary, `phase_${name}_requests`, "count");
     if (!Number.isFinite(phaseP95) || !Number.isFinite(phaseErrors)) return null;
-    return tableRow([label, whole(phaseRequests), `${phaseP95.toFixed(0)} ms`, `${(phaseErrors * 100).toFixed(1)}%`]);
+    const stagePass = phaseP95 < p95LimitMs && phaseErrors < errorLimit;
+    return tableRow([label, whole(phaseRequests), `${phaseP95.toFixed(2)} ms`, `${(phaseErrors * 100).toFixed(3)}%`, stagePass ? "PASS" : "FAIL"], stagePass ? "threshold-pass" : "threshold-fail");
   }).filter(Boolean);
   byId("phase-rows").replaceChildren(...phaseRows);
   byId("phase-section").hidden = phaseRows.length === 0;
@@ -411,7 +456,7 @@ function renderSummary(summary, profile, source = {}) {
   const latencyStatus = verdict.checks.latencyPassed ? "PASS" : "FAIL";
   const errorStatus = verdict.checks.errorsPassed ? "PASS" : "FAIL";
   const message = byId("summary-message");
-  message.textContent = `p95 ${latencyStatus}: ${p95.toFixed(1)} ms vs ${config.p95LimitMs} ms limit. Errors ${errorStatus}: ${(errorRate * 100).toFixed(2)}% vs ${(config.errorLimit * 100).toFixed(0)}% limit.${verdict.passed && errorRate > 0 ? " Some requests still failed; inspect the phases." : ""}`;
+  message.textContent = `p95 ${latencyStatus}: ${p95.toFixed(2)} ms vs ${p95LimitMs} ms limit. Errors ${errorStatus}: ${(errorRate * 100).toFixed(3)}% vs ${(errorLimit * 100).toFixed(2)}% limit. All recorded threshold decisions are listed above.${verdict.passed && errorRate > 0 ? " Some requests still failed; inspect the phases." : ""}`;
   message.className = `inline-message ${verdict.passed ? "pass" : "fail"}`;
 }
 
@@ -454,7 +499,7 @@ async function pollLatestRun() {
     runActive = data.run?.status === "running";
     const availability = byId("run-availability");
     availability.textContent = data.canRun ? "Run k6 on this computer; the latest result appears automatically."
-      : data.reason === "hosted" ? "Hosted view: run k6 on a local QA Lab copy, or open a summary."
+      : data.reason === "hosted" ? "Hosted view: Connect k6 to run on this computer. Results appear here automatically."
         : "k6 is missing. Install Grafana k6, then restart QA Lab.";
     byId("k6-install").hidden = data.canRun || (data.reason === "hosted" && !bridgeConnected);
     updatePeak();
@@ -475,6 +520,8 @@ async function pollLatestRun() {
         renderSummary(run.summary, run.scenario, {
           label: run.source === "saved" ? `Latest saved run: ${run.filename}` : "Latest local k6 run",
           finishedAt: run.finishedAt,
+          exitCode: run.exitCode,
+          id: run.id,
         });
         showRunState(run.source === "saved" ? "Saved k6 result loaded" : "Latest test completed", `${run.scenario.toUpperCase()} · ${readableTime(run.finishedAt)} · ${run.source === "saved" ? "saved file found on this computer" : "result updated automatically"}`);
       } catch (error) {
@@ -490,9 +537,8 @@ async function pollLatestRun() {
     }
   } catch {
     localK6Ready = false;
-    bridgeConnected = false;
     byId("run-k6").disabled = true;
-    byId("run-availability").textContent = "Could not check local k6. Reopen the local QA Lab page.";
+    byId("run-availability").textContent = "Local runner offline. Reconnect k6; the result below is from the last completed run.";
     byId("k6-install").hidden = true;
   } finally {
     latestPollPending = false;
@@ -566,6 +612,48 @@ async function connectLocalK6() {
   }
 }
 
+async function autoConnectK6() {
+  if (connectPending) return;
+  if (localPage) {
+    await pollLatestRun();
+    byId("bridge-status").textContent = localK6Ready ? "Connected to local k6. Choose a scenario, then Run local k6." : "Run setup-windows.cmd to install k6, then restart this local QA Lab.";
+    return;
+  }
+  connectPending = true;
+  byId("connect-k6").disabled = true;
+  const token = [...crypto.getRandomValues(new Uint8Array(32))].map((value) => value.toString(16).padStart(2, "0")).join("");
+  const uri = `qalab://connect?${new URLSearchParams({ origin: location.origin, token })}`;
+  byId("bridge-status").textContent = "Allow your browser to open QA Lab and access the local network. Connecting...";
+  location.href = uri;
+  try {
+    const deadline = Date.now() + 35_000;
+    while (Date.now() < deadline) {
+      try {
+        const response = await fetch(`${bridgeBase}/status`, { cache: "no-store", headers: { "X-QA-Bridge-Code": token }, signal: AbortSignal.timeout(2000) });
+        if (response.ok) {
+          const data = await response.json();
+          bridgeCode = token;
+          bridgeConnected = true;
+          latestAutoId = null;
+          latestAutoStatus = null;
+          heapHistory.length = 0;
+          byId("bridge-status").textContent = data.canRun ? "Connected. k6 and the test API run on this computer. Results appear on this page." : "QA Lab connected, but k6 is missing. Run setup-windows.cmd, then reconnect.";
+          await pollLatestRun();
+          await pollTelemetry();
+          return;
+        }
+      } catch { /* The protocol handler or browser permission prompt may still be pending. */ }
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+    throw new Error("No local connector found. Download the project, run setup-windows.cmd once, then Connect k6 again. Allow the browser's local-network permission.");
+  } catch (error) {
+    byId("bridge-status").textContent = error.message;
+  } finally {
+    connectPending = false;
+    byId("connect-k6").disabled = false;
+  }
+}
+
 function runUnit(event) {
   event.preventDefault();
   const result = evaluateThresholds({
@@ -581,7 +669,29 @@ function runUnit(event) {
     ["p95 observed / limit", `${byId("unit-p95").value} / ${byId("unit-p95-limit").value} ms`],
     ["Errors observed / limit", `${byId("unit-errors").value} / ${byId("unit-error-limit").value}%`],
     ["Rules passed", result.valid ? `${Number(result.checks.latencyPassed) + Number(result.checks.errorsPassed)} / 2` : "Invalid input"],
-  ], !result.valid ? "INVALID · Input does not meet the metric contract." : result.passed ? "PASS · Both strict threshold checks passed." : "FAIL · One or both thresholds were reached or exceeded.", result.valid && result.passed ? "pass" : "fail");
+  ], !result.valid ? "INVALID · Input does not meet the metric contract." : result.passed ? "PASS · Both strict threshold checks passed." : "FAIL · One or both thresholds were reached or exceeded.", result.valid && result.passed ? "pass" : "fail", result.valid ? [
+    ["Latency rule", `< ${result.values.p95LimitMs} ms`, `${result.values.p95Ms} ms`, result.checks.latencyPassed ? "PASS" : "FAIL"],
+    ["Error-rate rule", `< ${result.values.errorLimit * 100}%`, `${result.values.errorRate * 100}%`, result.checks.errorsPassed ? "PASS" : "FAIL"],
+  ] : Object.entries(result.errors).map(([field, message]) => [field, message, byId({ p95Ms: "unit-p95", errorRate: "unit-errors", p95LimitMs: "unit-p95-limit", errorLimit: "unit-error-limit" }[field]).value || "Empty", "INVALID"]));
+}
+
+function runUnitCases() {
+  const normal = { p95Ms: 280, errorRate: 0.005, p95LimitMs: 500, errorLimit: 0.01 };
+  const cases = [
+    ["Normal metrics", {}, "PASS"], ["Latency equals limit", { p95Ms: 500 }, "FAIL"],
+    ["Latency exceeds limit", { p95Ms: 501 }, "FAIL"], ["Errors equal limit", { errorRate: 0.01 }, "FAIL"],
+    ["Errors exceed limit", { errorRate: 0.02 }, "FAIL"], ["Both exceed limits", { p95Ms: 600, errorRate: 0.02 }, "FAIL"],
+    ["Zero latency and errors", { p95Ms: 0, errorRate: 0 }, "PASS"], ["Negative latency", { p95Ms: -1 }, "INVALID"],
+    ["Error rate exceeds 100%", { errorRate: 1.1 }, "INVALID"], ["Missing latency", { p95Ms: "" }, "INVALID"],
+    ["Zero latency limit", { p95LimitMs: 0 }, "INVALID"], ["Zero error limit", { errorLimit: 0 }, "INVALID"],
+  ];
+  const checks = cases.map(([name, values, expected]) => {
+    const result = evaluateThresholds({ ...normal, ...values });
+    const actual = !result.valid ? "INVALID" : result.passed ? "PASS" : "FAIL";
+    return [name, expected, actual, actual === expected ? "PASS" : "FAIL"];
+  });
+  const passed = checks.filter((row) => row[3] === "PASS").length;
+  showUnitEvidence([["Cases passed", `${passed} / ${checks.length}`], ["Cases failed", checks.length - passed], ["Function", "evaluateThresholds"]], `${passed === checks.length ? "PASS" : "FAIL"} · Each test compares the actual function output with its expected output.`, passed === checks.length ? "pass" : "fail", checks);
 }
 
 function updateApiPreset() {
@@ -589,7 +699,10 @@ function updateApiPreset() {
 }
 
 async function sendApiRequest() {
-  const preset = apiPresets[byId("api-preset").value];
+  byId("send-api").disabled = true;
+  const name = byId("api-preset").value;
+  const preset = apiPresets[name];
+  showApiEvidence([], "RUNNING · Waiting for this request's response.");
   const started = performance.now();
   try {
     const response = await fetch(preset.url, {
@@ -603,21 +716,32 @@ async function sendApiRequest() {
     let parsed;
     try { parsed = JSON.parse(body); byId("api-response").textContent = JSON.stringify(parsed, null, 2); }
     catch { byId("api-response").textContent = body; }
-    const expectedStatus = { health: 200, metrics: 200, evaluate: 200, invalid: 400, missing: 404 }[byId("api-preset").value];
+    const expectedStatus = { health: 200, metrics: 200, evaluate: 200, invalid: 400, missing: 404 }[name];
     const contract = {
       health: parsed?.service === "qa-lab" && parsed?.status === "ready",
       metrics: Number.isFinite(parsed?.completed) && Number.isFinite(parsed?.capacity),
       evaluate: typeof parsed?.passed === "boolean" && parsed?.valid === true,
       invalid: Boolean(parsed?.fields?.p95Ms),
       missing: parsed?.error === "not_found",
-    }[byId("api-preset").value];
-    const passed = response.status === expectedStatus && contract;
-    showApiEvidence([["HTTP observed / expected", `${response.status} / ${expectedStatus}`], ["Response time", byId("api-response-time").textContent], ["JSON contract", contract ? "Matched" : "Mismatch"]], `${passed ? "PASS" : "FAIL"} · Status and required response fields ${passed ? "matched" : "did not match"}.`, passed ? "pass" : "fail");
+    }[name];
+    const expectations = {
+      health: 'service = "qa-lab", status = "ready"', metrics: "completed and capacity are finite numbers",
+      evaluate: "valid = true; passed is boolean", invalid: "fields.p95Ms contains a validation message",
+      missing: 'error = "not_found"',
+    };
+    const json = response.headers.get("content-type")?.includes("application/json") && parsed !== undefined;
+    const passed = response.status === expectedStatus && contract && json;
+    showApiEvidence([["HTTP observed / expected", `${response.status} / ${expectedStatus}`], ["Response time", byId("api-response-time").textContent], ["JSON contract", contract ? "Matched" : "Mismatch"]], `${passed ? "PASS" : "FAIL"} · Status, JSON and required fields ${passed ? "matched" : "did not match"}. Response time is informational; no latency limit is configured here.`, passed ? "pass" : "fail", [
+      ["HTTP status", String(expectedStatus), String(response.status), response.status === expectedStatus ? "PASS" : "FAIL"],
+      ["Content type / parsing", "Valid application/json", response.headers.get("content-type") || "Missing", json ? "PASS" : "FAIL"],
+      ["Response fields", expectations[name], contract ? "Matched" : "Mismatch; inspect the response shown above", contract ? "PASS" : "FAIL"],
+      ["Response time", "No configured limit", byId("api-response-time").textContent, "INFO"],
+    ]);
   } catch (error) {
     byId("api-response-status").textContent = "Request failed";
     byId("api-response").textContent = error.message;
     showApiEvidence([["HTTP status", "No response"], ["Response time", "–"], ["JSON contract", "Not checked"]], "FAIL · The request did not complete.", "fail");
-  }
+  } finally { byId("send-api").disabled = false; }
 }
 
 function planPayload() {
@@ -636,10 +760,12 @@ function reviewPlan(event) {
   const result = validatePlan(planPayload());
   for (const field of ["name", "scenario", "targetVus", "notes"]) byId(`plan-error-${field}`).textContent = result.errors[field] || "";
   if (!result.valid) {
-    showE2eEvidence([["Valid fields", `${4 - Object.keys(result.errors).length} / 4`], ["Save response", "Not sent"], ["Retrieved plan", "Not checked"]], "FAIL · Fix the highlighted input before saving.", "fail");
+    showE2eEvidence([["Valid fields", `${4 - Object.keys(result.errors).length} / 4`], ["Save response", "Not sent"], ["Retrieved plan", "Not checked"]], "VALIDATION BLOCKED · Input was rejected. The save/retrieve workflow has not run.", "", Object.entries(result.errors).map(([field, message]) => [field, message, String(planPayload()[field]), "INVALID"]));
     return;
   }
-  showE2eEvidence([["Valid fields", "4 / 4"], ["Save response", "Not sent"], ["Retrieved plan", "Not checked"]], "VALIDATED · Continue to Save plan; the end-to-end check is not complete yet.");
+  showE2eEvidence([["Valid fields", "4 / 4"], ["Save response", "Not sent"], ["Retrieved plan", "Not checked"]], "VALIDATED · Continue to Save plan; the end-to-end check is not complete yet.", "", [
+    ["Input validation", "4 valid fields", "4 / 4", "PASS"], ["Save response", "HTTP 201", "Not sent", "NOT RUN"], ["Read-back response", "HTTP 200 + matching ID and all fields", "Not sent", "NOT RUN"],
+  ]);
   const labels = { name: "Plan name", scenario: "Scenario", targetVus: "Peak users", notes: "Notes" };
   byId("plan-review").replaceChildren(...Object.entries(result.value).map(([key, value]) => {
     const row = document.createElement("div");
@@ -655,22 +781,33 @@ function reviewPlan(event) {
 
 async function savePlan() {
   byId("plan-save-error").textContent = "";
+  byId("plan-save").disabled = true;
+  const checks = [];
+  const payload = planPayload();
+  e2eResult = null;
+  showE2eEvidence([], "RUNNING · Saving and retrieving this plan.");
   try {
-    const response = await fetch("/api/plans", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(planPayload()) });
+    const response = await fetch("/api/plans", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     const body = await response.json();
-    if (!response.ok) throw new Error(Object.values(body.fields || {}).join(" ") || "Plan could not be saved.");
+    checks.push(["Save response", "HTTP 201", `HTTP ${response.status}`, response.status === 201 ? "PASS" : "FAIL"]);
+    if (response.status !== 201 || !body.plan?.id) throw new Error(Object.values(body.fields || {}).join(" ") || "Plan could not be saved with an ID and HTTP 201.");
     const verify = await fetch(`/api/plans/${body.plan.id}`);
-    if (!verify.ok) throw new Error("Saved plan could not be retrieved.");
+    checks.push(["Read-back response", "HTTP 200", `HTTP ${verify.status}`, verify.status === 200 ? "PASS" : "FAIL"]);
+    if (verify.status !== 200) throw new Error("Saved plan could not be retrieved.");
     const saved = (await verify.json()).plan;
-    if (saved?.name !== body.plan.name || saved?.scenario !== body.plan.scenario || saved?.targetVus !== body.plan.targetVus) throw new Error("Retrieved plan does not match what was saved.");
+    const expected = { ...validatePlan(payload).value, id: body.plan.id };
+    for (const [field, value] of Object.entries(expected)) checks.push([`Retrieved ${field}`, String(value || "(empty)"), String(saved?.[field] ?? "Missing"), saved?.[field] === value ? "PASS" : "FAIL"]);
+    if (checks.some((row) => row[3] === "FAIL")) throw new Error("Retrieved plan does not match the submitted ID and fields.");
     byId("plan-saved-copy").textContent = `${body.plan.name} · ${body.plan.scenario} · ${body.plan.targetVus} VUs`;
     byId("plan-saved-id").textContent = body.plan.id;
     showPlanStep(3);
-    showE2eEvidence([["Valid fields", "4 / 4"], ["Save response", `HTTP ${response.status}`], ["Retrieved plan", "Matched ID + fields"]], "PASS · The plan was saved and retrieved through the UI/API flow.", "pass");
+    e2eResult = { passed: true, width: document.documentElement.clientWidth, id: saved.id };
+    showE2eEvidence([["Valid fields", "4 / 4"], ["Save response", `HTTP ${response.status}`], ["Retrieved plan", "Matched ID + fields"]], "PASS · The plan was saved and all fields were retrieved through the UI/API flow.", "pass", checks);
   } catch (error) {
+    e2eResult = { passed: false, width: document.documentElement.clientWidth };
     byId("plan-save-error").textContent = error.message;
-    showE2eEvidence([["Valid fields", "4 / 4"], ["Save response", "Failed"], ["Retrieved plan", "Not verified"]], `FAIL · ${error.message}`, "fail");
-  }
+    showE2eEvidence([["Valid fields", "4 / 4"], ["Save response", "Failed"], ["Retrieved plan", "Not verified"]], `FAIL · ${error.message}`, "fail", checks);
+  } finally { byId("plan-save").disabled = false; }
 }
 
 function measureMobile() {
@@ -682,7 +819,15 @@ function measureMobile() {
   byId("mobile-overflow").textContent = content > width ? "Detected" : "None";
   byId("mobile-overflow").style.color = content > width ? "var(--coral)" : "var(--green)";
   const overflow = Math.max(0, content - width);
-  showMobileEvidence([["Viewport", `${width} px`], ["Horizontal overflow", `${overflow} px`], ["Allowed overflow", "0 px"]], `${overflow ? "FAIL" : "PASS"} · Page-level layout at this viewport. This does not certify touch or native mobile behavior.`, overflow ? "fail" : "pass");
+  const controls = [...document.querySelectorAll('.topic-link, #view-mobile button')].filter((node) => node.getClientRects().length);
+  const small = controls.filter((node) => { const box = node.getBoundingClientRect(); return box.width < 24 || box.height < 24; });
+  const passed = overflow === 0 && small.length === 0;
+  showMobileEvidence([["Viewport", `${width} px`], ["Horizontal overflow", `${overflow} px`], ["Small targets", `${small.length} / ${controls.length}`]], `${passed ? "PASS" : "FAIL"} · Layout and visible control size checks at this viewport. Touch support and native behavior are not certified.`, passed ? "pass" : "fail", [
+    ["Page overflow", "0 px", `${overflow} px`, overflow ? "FAIL" : "PASS"],
+    ...controls.map((node) => { const box = node.getBoundingClientRect(); return [`Target: ${node.textContent.trim()}`, "At least 24 × 24 px", `${box.width.toFixed(1)} × ${box.height.toFixed(1)} px`, box.width >= 24 && box.height >= 24 ? "PASS" : "FAIL"]; }),
+    ["Touch support", "Informational", `${navigator.maxTouchPoints} touch points`, "INFO"],
+    ["Mobile workflow", "Save / retrieve via Web E2E at this viewport", e2eResult?.width === width ? e2eResult.passed ? `Matched plan ${e2eResult.id}` : "The last workflow failed" : "Run the plan flow separately", e2eResult?.width === width ? e2eResult.passed ? "PASS" : "FAIL" : "NOT RUN"],
+  ]);
 }
 
 function setVisualVariant(variant) {
@@ -691,8 +836,54 @@ function setVisualVariant(variant) {
   const heading = byId("visual-specimen").querySelector(".specimen-heading");
   const transform = getComputedStyle(heading).transform;
   const shift = transform === "none" ? 0 : Math.round(new DOMMatrixReadOnly(transform).m41);
-  const changes = Number(shift !== 0) + Number(variant === "shifted");
-  showVisualEvidence([["Heading shift", `${shift} px`], ["Style differences", String(changes)], ["Allowed shift", "0 px"]], `${changes ? "FAIL" : "PASS"} · ${changes ? "Preview style differs" : "Preview style matches"}. Run Playwright for the actual screenshot assertion.`, changes ? "fail" : "pass");
+  showVisualEvidence([["Heading shift", `${shift} px`]], "NOT RUN · Compare images to measure this variant.");
+  visualGeneration += 1;
+  if (byId("view-visual").classList.contains("active")) compareVisual();
+}
+
+async function compareVisual() {
+  if (visualBusy || !byId("view-visual").classList.contains("active")) return;
+  visualBusy = true;
+  const generation = visualGeneration;
+  byId("visual-compare").disabled = true;
+  showVisualEvidence([], "RUNNING · Comparing this variant with the reference image.");
+  let reference;
+  try {
+    const { default: html2canvas } = await import("/vendor/html2canvas.js");
+    await document.fonts.ready;
+    const specimen = byId("visual-specimen");
+    const box = specimen.getBoundingClientRect();
+    if (!visualBaseline) {
+      visualBaseline = specimen.cloneNode(true);
+      visualBaseline.classList.remove("shifted");
+      visualBaseline.removeAttribute("id");
+    }
+    reference = visualBaseline.cloneNode(true);
+    reference.classList.add("visual-reference");
+    reference.setAttribute("aria-hidden", "true");
+    reference.style.width = `${box.width}px`;
+    document.body.append(reference);
+    const options = { scale: 1, backgroundColor: "#ffffff", logging: false };
+    const before = await html2canvas(reference, options);
+    const after = await html2canvas(specimen, options);
+    const pixels = (canvas) => canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height);
+    const diff = comparePixels(pixels(before), pixels(after));
+    const heading = specimen.querySelector(".specimen-heading");
+    const transform = getComputedStyle(heading).transform;
+    const shift = transform === "none" ? 0 : new DOMMatrixReadOnly(transform).m41;
+    const same = diff.sameSize;
+    showVisualEvidence([["Heading shift", `${shift} px`], ["Changed pixels", same ? `${diff.changed.toLocaleString()} / ${diff.total.toLocaleString()}` : "Image dimensions differ"], ["Image difference", same ? `${diff.diffPercent.toFixed(3)}%` : "–"]], `${diff.passed ? "PASS" : "FAIL"} · Browser-rendered images ${diff.passed ? "match within" : "exceed"} the 0.1% changed-pixel limit. The separate Playwright suite uses its checked-in screenshot.`, diff.passed ? "pass" : "fail", [
+      ["Image dimensions", `${before.width} × ${before.height}`, `${after.width} × ${after.height}`, same ? "PASS" : "FAIL"],
+      ["Changed pixel ratio", "≤ 0.1%; channel difference > 16 counts as changed", same ? `${diff.diffPercent.toFixed(3)}% (${diff.changed} pixels)` : "Different sizes", diff.passed ? "PASS" : "FAIL"],
+      ["Heading shift", "Informational", `${shift} px`, "INFO"],
+    ]);
+  } catch (error) { showVisualEvidence([], `ERROR · Image comparison could not run: ${error.message}`, "fail"); }
+  finally {
+    reference?.remove();
+    visualBusy = false;
+    byId("visual-compare").disabled = false;
+    if (generation !== visualGeneration) compareVisual();
+  }
 }
 
 function buildAiPrompt() {
@@ -784,9 +975,14 @@ async function generateAiCases() {
     return;
   }
   const button = byId("ai-generate");
+  const started = performance.now();
   button.disabled = true;
   byId("ai-status").textContent = "Generating test cases...";
   byId("ai-result-wrap").hidden = true;
+  aiDraftReady = false;
+  aiRequestEvidence = null;
+  byId("view-ai").querySelectorAll(".checklist input").forEach((box) => { box.checked = false; });
+  showAiEvidence([], "RUNNING · Waiting for the current Gemini request.");
   try {
     const response = await fetch("/api/ai/generate", {
       method: "POST",
@@ -794,13 +990,19 @@ async function generateAiCases() {
       body: JSON.stringify({ topic: byId("ai-topic").value, requirement: byId("ai-requirement").value.trim(), model: byId("ai-model").value, ...aiCredentials() }),
     });
     const result = await response.json();
+    const matched = typeof result.text === "string" && result.text.trim().length > 0 && typeof result.model === "string";
+    aiRequestEvidence = { status: response.status, model: result.model || "Not returned", elapsed: Math.round(performance.now() - started), matched };
     if (!response.ok) throw new Error(result.message || "Gemini request failed.");
+    if (!matched) throw new Error("Gemini returned no usable text or model ID.");
     byId("ai-result").textContent = result.text;
     byId("ai-result-wrap").hidden = false;
     aiDraftReady = true;
     updateAiEvidence();
     byId("ai-status").textContent = "Draft ready. Check its assertions and run the test before reporting a pass.";
   } catch (error) {
+    aiDraftReady = false;
+    if (!aiRequestEvidence) aiRequestEvidence = { status: "No response", elapsed: Math.round(performance.now() - started), matched: false, model: "Unknown" };
+    updateAiEvidence();
     byId("ai-status").textContent = error.message || "Gemini request failed.";
     toast(byId("ai-status").textContent, true);
   } finally {
@@ -812,10 +1014,18 @@ function updateAiEvidence() {
   const checks = [...byId("view-ai").querySelectorAll(".checklist input")];
   const reviewed = checks.filter((box) => box.checked).length;
   const done = aiDraftReady && reviewed === checks.length;
-  showAiEvidence([["Draft generated", aiDraftReady ? "Yes" : "No"], ["Review checks", `${reviewed} / ${checks.length}`], ["Model", byId("ai-model").value]], done ? "REVIEW COMPLETE · Confirm actual test results separately; this is not an automated pass." : "NOT VERIFIED · AI output needs human review and a real test run.", done ? "pass" : "");
+  const request = aiRequestEvidence;
+  showAiEvidence([["Draft generated", aiDraftReady ? "Yes" : "No"], ["Review checks", `${reviewed} / ${checks.length}`], ["Model used", request?.model || "Not called"]], done ? "REVIEW COMPLETE · Checklist is self-reported. Generated tests remain NOT VERIFIED here." : request && !aiDraftReady ? "FAIL · The latest Gemini request did not produce a usable draft." : "NOT VERIFIED · AI output needs human review and a real test run.", request && !aiDraftReady ? "fail" : "", [
+    ["Generation HTTP status", "200", String(request?.status || "Not called"), request ? request.status === 200 ? "PASS" : "FAIL" : "NOT RUN"],
+    ["Draft response contract", "Nonempty text and model ID", request?.matched ? "Matched" : "No valid draft", request ? request.matched ? "PASS" : "FAIL" : "NOT RUN"],
+    ["Generation duration", "No configured limit", request ? `${request.elapsed} ms` : "Not called", "INFO"],
+    ["Human review", `${checks.length} / ${checks.length} self-reported checks`, `${reviewed} / ${checks.length}`, done ? "REVIEWED" : "PENDING"],
+    ["Generated test execution", "Actual assertions must pass in the relevant tool", "No execution evidence is collected by this AI page", "NOT VERIFIED"],
+  ]);
 }
 
 async function loadCiStatus() {
+  byId("ci-refresh").disabled = true;
   showCiEvidence([["Latest run", "Loading"], ["State", "Checking"], ["Updated", "–"]], "Checking the latest public GitHub Actions run...");
   try {
     const response = await fetch("https://api.github.com/repos/ZoeChan189/qa-playground/actions/runs?per_page=1", { headers: { Accept: "application/vnd.github+json" }, cache: "no-store", signal: AbortSignal.timeout(10_000) });
@@ -823,11 +1033,28 @@ async function loadCiStatus() {
     const run = (await response.json()).workflow_runs?.[0];
     if (!run) throw new Error("No workflow run found");
     const status = run.status === "completed" ? run.conclusion : run.status;
-    const decision = status === "success" ? "PASS" : ["failure", "cancelled", "timed_out"].includes(status) ? "FAIL" : "PENDING";
-    showCiEvidence([["Latest run", `#${run.run_number}`], ["State", status], ["Updated", readableTime(run.updated_at)]], `${decision} · ${run.name}. Open Actions for job-by-job results.`, decision === "PASS" ? "pass" : decision === "FAIL" ? "fail" : "");
+    const classify = (state) => state === "success" ? "PASS" : ["failure", "cancelled", "timed_out", "action_required", "startup_failure", "stale"].includes(state) ? "FAIL" : state === "skipped" ? "SKIPPED" : "PENDING";
+    const decision = classify(status);
+    const jobResponse = await fetch(`https://api.github.com/repos/ZoeChan189/qa-playground/actions/runs/${run.id}/jobs?per_page=100`, { headers: { Accept: "application/vnd.github+json" }, cache: "no-store", signal: AbortSignal.timeout(10_000) });
+    const checks = [["Workflow", "completed / success", `${run.status} / ${run.conclusion || "–"}`, decision]];
+    let failed = 0;
+    let totalJobs = null;
+    if (jobResponse.ok) {
+      const data = await jobResponse.json();
+      const jobs = data.jobs || [];
+      totalJobs = data.total_count;
+      for (const job of jobs) {
+        const state = job.status === "completed" ? job.conclusion : job.status;
+        if (classify(state) === "FAIL") failed += 1;
+        checks.push([`Job: ${job.name}`, "completed / success", `${job.status} / ${job.conclusion || "–"}`, classify(state)]);
+        for (const step of job.steps || []) checks.push([`${job.name} · ${step.name}`, "success; conditional steps may be skipped", step.conclusion || step.status, classify(step.conclusion || step.status)]);
+      }
+      if (jobs.length < totalJobs) checks.push(["Job listing", `All ${totalJobs} jobs`, `${jobs.length} loaded`, "PARTIAL"]);
+    } else checks.push(["Job details", "GitHub job/step response", `HTTP ${jobResponse.status}`, "UNAVAILABLE"]);
+    showCiEvidence([["Latest run", `#${run.run_number}`], ["State", status], ["Failed jobs", totalJobs === null ? "Unavailable" : `${failed} / ${totalJobs}`], ["Commit / branch", `${run.head_sha.slice(0, 7)} / ${run.head_branch}`]], `${decision} · ${run.name} · updated ${readableTime(run.updated_at)}. Conditional skipped steps do not fail the workflow.`, decision === "PASS" ? "pass" : decision === "FAIL" ? "fail" : "", checks);
   } catch (error) {
     showCiEvidence([["Latest run", "Unavailable"], ["State", "Unknown"], ["Updated", "–"]], `${error.message}. Open Actions for the authoritative result.`);
-  }
+  } finally { byId("ci-refresh").disabled = false; }
 }
 
 document.querySelectorAll(".topic-link").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.view)));
@@ -838,14 +1065,19 @@ byId("perf-vus").addEventListener("input", updatePeak);
 byId("run-probe").addEventListener("click", runProbe);
 byId("run-k6").addEventListener("click", startK6Run);
 byId("bridge-connect").addEventListener("click", connectLocalK6);
+byId("connect-k6").addEventListener("click", autoConnectK6);
+unitCasesButton.addEventListener("click", runUnitCases);
+visualCompare.addEventListener("click", compareVisual);
+ciRefresh.addEventListener("click", loadCiStatus);
 byId("summary-file").addEventListener("change", (event) => { importSummary(event.target.files[0]); event.target.value = ""; });
 byId("unit-form").addEventListener("submit", runUnit);
-byId("api-preset").addEventListener("change", updateApiPreset);
+byId("unit-form").addEventListener("input", () => { byId("unit-result").textContent = "Inputs changed. Evaluate again."; byId("unit-result").className = "result-line"; showUnitEvidence([], "NOT RUN · Inputs changed; evaluate to see a new result."); });
+byId("api-preset").addEventListener("change", () => { updateApiPreset(); showApiEvidence([], "NOT RUN · Request changed; send it to measure a new response."); });
 byId("send-api").addEventListener("click", sendApiRequest);
 byId("plan-form").addEventListener("submit", reviewPlan);
 byId("plan-back").addEventListener("click", () => showPlanStep(1));
 byId("plan-save").addEventListener("click", savePlan);
-byId("plan-new").addEventListener("click", () => { byId("plan-form").reset(); showPlanStep(1); });
+byId("plan-new").addEventListener("click", () => { byId("plan-form").reset(); e2eResult = null; showE2eEvidence([], "NOT RUN · New plan workflow."); showPlanStep(1); });
 byId("mobile-check").addEventListener("click", measureMobile);
 byId("mobile-open-plan").addEventListener("click", () => navigate("e2e"));
 byId("ai-build").addEventListener("click", buildAiPrompt);
@@ -863,7 +1095,7 @@ window.addEventListener("resize", () => { if (byId("view-mobile").classList.cont
 
 updateApiPreset();
 buildAiPrompt();
-byId("bridge-controls").hidden = localPage;
+byId("manual-pairing").hidden = localPage;
 setVisualVariant("baseline");
 updateAiEvidence();
 loadAiStatus();

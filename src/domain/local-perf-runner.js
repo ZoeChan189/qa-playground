@@ -80,7 +80,7 @@ export function createLocalPerfRunner({
     return {
       canRun: installed,
       reason: installed ? null : "k6_missing",
-      run: publicRun(current && currentTime >= savedTime ? current : saved),
+      run: publicRun(active || (current && currentTime >= savedTime ? current : saved)),
     };
   }
 

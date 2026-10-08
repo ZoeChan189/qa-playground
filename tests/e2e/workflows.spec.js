@@ -49,7 +49,7 @@ test("k6 summary import reads flat metrics and phase comparison", async ({ page 
   await expect(page.locator("#summary-message")).toContainText("p95 PASS");
   await expect(page.locator("#summary-message")).toContainText("Errors FAIL");
   await expect(page.locator("#phase-rows tr")).toHaveCount(3);
-  await expect(page.locator("#phase-rows")).toContainText("25.4%");
+  await expect(page.locator("#phase-rows")).toContainText("25.410%");
   await page.locator("#summary-file").setInputFiles({
     name: "bad.json", mimeType: "application/json", buffer: Buffer.from("not JSON"),
   });

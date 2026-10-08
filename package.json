@@ -26,6 +26,7 @@
   },
   "dependencies": {
     "express": "^5.1.0",
+    "html2canvas": "1.4.1",
     "lucide-static": "^1.48.0"
   },
   "devDependencies": {

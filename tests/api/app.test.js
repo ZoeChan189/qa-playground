@@ -1,12 +1,24 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import { createApp } from "../../src/app.js";
+import { createBridgeSession } from "../../src/domain/local-bridge.js";
 
 let app;
 beforeEach(() => { app = createApp(); });
 afterEach(() => vi.unstubAllEnvs());
 
 describe("QA Lab API", () => {
+  it("accepts an automatically paired token and rejects a different website", async () => {
+    const origin = "https://class.example";
+    const session = createBridgeSession({ origin, code: "manual" });
+    const token = "b".repeat(64);
+    const bridge = createApp({ bridgeSession: session, bridgeCode: session.code, bridgeOrigin: origin, perfRunner: { latest: async () => ({ canRun: true }), start: () => {} } });
+    const get = () => request(bridge).get("/local-bridge/status").set("Host", "127.0.0.1:4173").set("Origin", origin).set("X-QA-Bridge-Code", token);
+    expect((await get()).status).toBe(401);
+    session.pair({ origin, token });
+    expect((await get()).body.canRun).toBe(true);
+    expect((await request(bridge).get("/local-bridge/status").set("Host", "127.0.0.1:4173").set("Origin", "https://evil.example").set("X-QA-Bridge-Code", token)).status).toBe(403);
+  });
   it("starts k6 only from a local same-origin page and validates the profile", async () => {
     const perfRunner = {
       latest: vi.fn().mockResolvedValue({ canRun: true, reason: null, run: null }),

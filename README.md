@@ -4,25 +4,27 @@ One small, real web application for SWT301 testing demonstrations. **Performance
 
 ## Start in Windows
 
-Each group member can run an independent local copy. See the [step-by-step Vietnamese guide](docs/for-team.md) and the [beginner Word guide](docs/QA_Lab_Performance_Huong_dan_de_hieu.docx).
+Each group member can run an independent local copy. See the current [step-by-step Vietnamese guide](docs/for-team.md) for the connector and the on-page test decisions.
 
 1. On this GitHub page, choose **Code > Download ZIP**, then extract it (or clone the repo).
-2. Install Node.js 20+ and, for real performance runs, Grafana k6. Verify `node -v`, `npm -v`, and `k6 version` in a new terminal.
-3. Double-click `start-windows.cmd`. It installs project dependencies on first use and starts the local site. Open <http://localhost:4173> and keep that terminal open.
-4. On the local Performance page, choose Stress, Spike or Soak and click **Run local k6**. Wait for the detailed result to appear, then repeat for the other scenarios. Use `run-performance-windows.cmd` only if you also want JSON evidence in `results/`.
+2. Double-click `setup-windows.cmd` once. It installs missing Node.js/k6, installs dependencies and registers the `qalab://` connector for this Windows user. Keep the extracted folder in place; rerun setup after moving it.
+3. Open the hosted Performance page and click **Connect k6**. Allow the browser to open QA Lab and access the local network. The connector starts the local API automatically and pairs the current tab without copying a code.
+4. Choose Stress, Spike or Soak and click **Run local k6**. All measurements and decisions appear on the page. For an independent local page, double-click `start-windows.cmd` and open <http://localhost:4173>. `run-performance-windows.cmd` is optional when you want saved JSON evidence.
 
 If Node.js is missing or older than 20, install [Node.js 20+](https://nodejs.org/en/download), reopen the terminal, and try again. Other desktop platforms can run `npm ci` then `npm start`. A visitor browsing the hosted copy only needs a browser; someone running local k6 also needs Node.js, k6 and a local QA Lab copy. The core lab needs no database or paid service. Gemini is optional.
 
 ## What to click
 
-- **Performance:** choose Load, Stress, Spike or Soak; inspect the planned VU curve and limits. **Run local k6** generates real load on your own computer and updates the prominent verdict plus detailed results after each run. On the hosted site, first connect the local QA Lab with the pairing code shown in its terminal. **Run probe** sends only one request. **Open summary** remains available for older JSON results.
+- **Performance:** **Connect k6** starts/pairs the local runner after one-time setup; **Run local k6** starts the selected test. The latest run ID, request counts, full latency statistics, error rate, status counts, response-contract failures, exported k6 thresholds, exit code and stage decisions appear automatically. **Run probe** sends one request. **Open summary** is an optional older-result import.
 - **Unit:** edit latency, error rate and thresholds; compare pass, boundary and invalid results.
 - **API:** send preset valid/invalid requests and inspect HTTP status and JSON.
 - **Web E2E:** create, review and save a test plan through the real UI and API.
 - **Mobile web:** use a narrow screen or Playwright's mobile project; check overflow and repeat the plan flow.
-- **Visual:** the page measures a live DOM-style shift; run `npm run test:visual` for the actual Playwright screenshot comparison. The shifted variant intentionally fails the image assertion.
+- **Visual:** **Compare images** shows changed pixels, percentage, image dimensions, tolerance and PASS/FAIL against a browser-rendered unchanged reference. `npm run test:visual` separately compares against the checked-in Playwright screenshot. The shifted variant fails both comparisons.
 - **AI-assisted:** use the group Gemini key or enter a personal Gemini API key, load available models, then generate a draft. Review and run the proposed test; generation alone is not a pass.
-- **CI/CD:** the page shows the latest public workflow state; open GitHub Actions for job-level unit, API, desktop, mobile and visual results.
+- **CI/CD:** the page displays the latest actual workflow, commit, jobs and individual step conclusions. **Refresh results** fetches the latest state.
+
+Every topic has an **Expected / limit**, **Observed**, **Result** table. Unit **Run key cases** executes 12 assertions directly in the browser. API HTTP 400 can be PASS when rejection is expected. Web E2E checks save/retrieve status, ID and every submitted field. Mobile measures overflow and visible target sizes. AI displays generation HTTP status and response validity while keeping generated-test execution **NOT VERIFIED** until it is actually run elsewhere.
 
 See [the case matrix](docs/demo-cases.md) and [the performance guide](docs/performance.md) for class demonstrations and interpretation.
 
@@ -54,7 +56,9 @@ The command-line wrapper checks k6 and the target before starting, and saves a J
 
 ### Run local k6 while viewing the hosted site
 
-Start your own QA Lab with `start-windows.cmd` and keep it open. Its terminal prints a fresh **Hosted-site pairing code**. On the hosted Performance page, enter that code and click **Connect this computer**. The browser may request local-network access. Once connected, **Run local k6** calls only `127.0.0.1:4173`; the local k6 process targets your local API. The code is held only in the current tab's memory and is never sent to Render. The bridge accepts requests only from the configured origin and loopback interface. Default allowed origin: `https://qa-playground-5n74.onrender.com`; set `LOCAL_BRIDGE_ORIGIN` before starting QA Lab if your hosted URL differs. If browser policy blocks the bridge, use <http://localhost:4173> instead.
+Run `setup-windows.cmd` once, then click **Connect k6** on the hosted page. Windows uses the registered `qalab://` protocol to start the local server if needed. A Windows named pipe pairs a random tab token with the local server; it is not sent to Render. Confirm the browser's external-app and local-network prompts. **Run local k6** then launches k6 against `127.0.0.1:4173`, never the Render API. k6 is a command-line process: it does not have a desktop window to display. The button connects the runner; the subsequent Run button starts the actual scenario.
+
+The bridge allows only the configured hosted origin and loopback interface. The default is `https://qa-playground-5n74.onrender.com`; set the Windows user environment variable `LOCAL_BRIDGE_ORIGIN` if the hosted URL changes. A page reload needs **Connect k6** again. An already-running old server must be restarted once after updating this code. **Manual connection** with the terminal pairing code remains available. If browser policy blocks localhost, use the local page directly. Having only k6 installed, without the QA Lab connector, cannot enable web-to-desktop launch.
 
 The target performs real asynchronous PBKDF2 work and caps concurrent jobs at 24, returning HTTP 503 above capacity. k6 records real response times, error rates, request counts and phase comparisons. The API reports actual Node heap usage, not a simulated memory value. An overall threshold can pass even when some requests fail; inspect the phase table too. These short, single-machine tests illustrate methods, not production capacity. See [performance methodology and caveats](docs/performance.md).
 
