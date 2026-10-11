@@ -27,6 +27,14 @@ describe("performance evidence", () => {
     expect(() => perfDecision(summary({ http_reqs: { count: 0 } }), config)).toThrow(/cannot be marked PASS/);
     expect(() => perfDecision(summary({ http_req_failed: { value: 1.5 } }), config)).toThrow();
   });
+  it("marks missing contract or unknown thresholds as unverified, not passing", () => {
+    const incomplete = summary();
+    delete incomplete.metrics.invalid_success_responses;
+    expect(perfDecision(incomplete, config, 0)).toMatchObject({ passed: false, status: "NOT VERIFIED" });
+    expect(perfDecision(summary({ checks: { thresholds: { "rate>0.9": {} } } }), config, 0))
+      .toMatchObject({ passed: false, status: "NOT VERIFIED" });
+    expect(perfDecision(incomplete, config, 99).status).toBe("FAIL");
+  });
 });
 
 describe("pixel comparison", () => {

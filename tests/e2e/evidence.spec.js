@@ -16,7 +16,7 @@ test("old k6 results do not overwrite a newly selected scenario or VU input", as
   await expect(page.locator("#summary-profile")).toHaveText("Stress");
   await expect(page.locator("#profile-name")).toHaveText("Load");
   await expect(page.locator("#perf-vus")).toHaveValue("5");
-  await expect(page.locator("#perf-outcome-title")).toContainText("PASS");
+  await expect(page.locator("#perf-outcome-title")).toContainText("NOT VERIFIED");
   await page.locator("#perf-vus").fill("12");
   await expect(page.locator("#profile-name")).toHaveText("Load");
   await expect(page.locator("#perf-vus")).toHaveValue("12");

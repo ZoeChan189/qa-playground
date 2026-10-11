@@ -90,6 +90,8 @@ code { overflow-wrap: anywhere; }
 .bridge-controls span { color: var(--muted); font-size: 11px; }
 .evidence-panel { margin: 18px 0 0; border-top: 2px solid #cfd9dc; padding-top: 13px; }
 .evidence-panel h2 { font-size: 15px; }
+.evidence-heading { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+.recent-table { min-width: 850px; }
 .evidence-panel > p { margin: 5px 0 10px; color: var(--muted); font-size: 11px; }
 .evidence-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; border: 1px solid var(--line); border-radius: 5px; background: white; }
 .evidence-grid > div { display: grid; gap: 5px; min-height: 67px; padding: 12px; border-right: 1px solid var(--line); }

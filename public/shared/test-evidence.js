@@ -37,5 +37,7 @@ export function perfDecision(summary, config, exitCode) {
     }
   }
   if (exitCode !== undefined && exitCode !== null) checks.push(["k6 exit code", "0; 99 means threshold breach", String(exitCode), exitCode === 0 ? "PASS" : "FAIL"]);
-  return { p95, errorRate, requests, p95LimitMs, errorLimit, checks, passed: !checks.some((row) => row[3] === "FAIL") };
+  const status = checks.some((row) => row[3] === "FAIL") ? "FAIL"
+    : checks.some((row) => row[3] === "NOT MEASURED") ? "NOT VERIFIED" : "PASS";
+  return { p95, errorRate, requests, p95LimitMs, errorLimit, checks, status, passed: status === "PASS" };
 }

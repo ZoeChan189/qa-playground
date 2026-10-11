@@ -28,9 +28,11 @@ If Node.js is missing or older than 20, install [Node.js 20+](https://nodejs.org
 
 Every topic has an **Expected / limit**, **Observed**, **Result** table. Unit **Run key cases** executes 12 assertions directly in the browser. API HTTP 400 can be PASS when rejection is expected. Web E2E checks save/retrieve status, ID and every submitted field. Mobile measures overflow and visible target sizes. AI displays generation HTTP status and response validity while keeping generated-test execution **NOT VERIFIED** until it is actually run elsewhere.
 
+**Copy result** copies the current topic's measured values and decision table as text for a report; it never includes the Gemini API-key input. Performance also keeps the last five distinct **Recent runs** in the current tab. These are session history, not shared server storage; reloading the tab clears them. Read each run's scenario, VUs and limits before comparing values. API now has equality, exceeded-limit and malformed-JSON presets, and checks the actual calculation as well as HTTP/JSON types. A correctly returned `passed: false` is a passing API contract test when that is the expected calculation.
+
 See [the case matrix](docs/demo-cases.md) and [the performance guide](docs/performance.md) for class demonstrations and interpretation.
 
-Version **1.1.1** adds stricter input validation, safe Gemini diagnostics, current-input evidence invalidation, correct long-Soak phase timing, and dependency/security fixes. See [the Vietnamese audit and error catalogue](docs/audit-2026-10-08.md) for verified cases, remaining limits, and fixes by topic.
+Version **1.1.2** prevents an overall PASS when summary checks are missing or unknown, replaces imported results when an active k6 run finishes, and reads Soak timing from the connected local runner. It also adds recent runs, result copying and stronger API calculation checks. See [the latest Vietnamese audit](docs/audit-2026-10-11.md) and [the earlier error catalogue](docs/audit-2026-10-08.md).
 
 ## Automated tests
 
@@ -63,6 +65,8 @@ The command-line wrapper checks k6 and the target before starting, and saves a J
 Run `setup-windows.cmd` once, then click **Connect k6** on the hosted page. Windows uses the registered `qalab://` protocol to start the local server if needed. A Windows named pipe pairs a random tab token with the local server; it is not sent to Render. Confirm the browser's external-app and local-network prompts. **Run local k6** then launches k6 against `127.0.0.1:4173`, never the Render API. k6 is a command-line process: it does not have a desktop window to display. The button connects the runner; the subsequent Run button starts the actual scenario.
 
 The bridge allows only the configured hosted origin and loopback interface. The default is `https://qa-playground-5n74.onrender.com`; set the Windows user environment variable `LOCAL_BRIDGE_ORIGIN` if the hosted URL changes. A page reload needs **Connect k6** again. An already-running old server must be restarted once after updating this code. **Manual connection** with the terminal pairing code remains available. If browser policy blocks localhost, use the local page directly. Having only k6 installed, without the QA Lab connector, cannot enable web-to-desktop launch.
+
+Keep the hosted page and local connector on the current release. On connection the page reads the local scenario catalogue, including a custom `SOAK_STEADY`, so the planned chart matches that computer. An older connector without this endpoint must be updated and restarted; the page reports this rather than displaying the hosted defaults as local settings.
 
 The target performs real asynchronous PBKDF2 work and caps concurrent jobs at 24, returning HTTP 503 above capacity. k6 records real response times, error rates, request counts and phase comparisons. The API reports actual Node heap usage, not a simulated memory value. An overall threshold can pass even when some requests fail; inspect the phase table too. These short, single-machine tests illustrate methods, not production capacity. See [performance methodology and caveats](docs/performance.md).
 

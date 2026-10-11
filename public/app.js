@@ -27,7 +27,10 @@ const apiPresets = {
   health: { method: "GET", url: "/api/health", body: "" },
   metrics: { method: "GET", url: "/api/perf/metrics", body: "" },
   evaluate: { method: "POST", url: "/api/evaluate", body: JSON.stringify({ p95Ms: 280, errorRate: 0.005, p95LimitMs: 500, errorLimit: 0.01 }, null, 2) },
+  boundary: { method: "POST", url: "/api/evaluate", body: JSON.stringify({ p95Ms: 500, errorRate: 0.005, p95LimitMs: 500, errorLimit: 0.01 }, null, 2) },
+  breach: { method: "POST", url: "/api/evaluate", body: JSON.stringify({ p95Ms: 600, errorRate: 0.02, p95LimitMs: 500, errorLimit: 0.01 }, null, 2) },
   invalid: { method: "POST", url: "/api/evaluate", body: JSON.stringify({ p95Ms: -5, errorRate: 0.005, p95LimitMs: 500, errorLimit: 0.01 }, null, 2) },
+  malformed: { method: "POST", url: "/api/evaluate", body: '{"p95Ms":' },
   missing: { method: "GET", url: "/api/not-found", body: "" },
 };
 let scenarios = null;
@@ -42,6 +45,7 @@ let latestAutoId = null;
 let latestAutoStatus = null;
 let manualSummary = false;
 let autoIdAtImport = null;
+let autoStatusAtImport = null;
 let latestPollPending = false;
 const localPage = ["localhost", "127.0.0.1"].includes(location.hostname);
 const bridgeBase = "http://127.0.0.1:4173/local-bridge";
@@ -59,6 +63,15 @@ let telemetryPending = false;
 let aiBusy = false;
 let aiModelsPending = false;
 let ciPending = false;
+const recentPerfRuns = [];
+let currentPerfCopy = "";
+
+function resultText(topic, metrics, message, checks, time = new Date().toISOString()) {
+  return [`QA Lab - ${topic}`, time, message,
+    ...metrics.map(([label, value]) => `${label}: ${value}`), "",
+    "Check | Expected / limit | Observed | Result",
+    ...checks.map((row) => row.join(" | "))].join("\n");
+}
 
 function createEvidence(topic, afterId, description) {
   const section = document.createElement("section");
@@ -66,6 +79,21 @@ function createEvidence(topic, afterId, description) {
   section.setAttribute("aria-label", `${topicNames[topic]} measured evidence`);
   const heading = document.createElement("h2");
   heading.textContent = "Measured result";
+  const headingRow = document.createElement("div");
+  headingRow.className = "evidence-heading";
+  const copy = document.createElement("button");
+  copy.type = "button";
+  copy.className = "button secondary";
+  copy.title = `Copy ${topicNames[topic]} result`;
+  copy.setAttribute("aria-label", copy.title);
+  const icon = document.createElement("img");
+  icon.src = "/icons/copy.svg";
+  icon.alt = "";
+  copy.append(icon, document.createTextNode("Copy result"));
+  copy.disabled = true;
+  let snapshot = "";
+  copy.addEventListener("click", () => copyText(snapshot));
+  headingRow.append(heading, copy);
   const note = document.createElement("p");
   note.textContent = description;
   const grid = document.createElement("div");
@@ -91,9 +119,11 @@ function createEvidence(topic, afterId, description) {
   table.append(header, rows);
   wrapper.append(table);
   wrapper.hidden = true;
-  section.append(heading, note, grid, verdict, wrapper);
+  section.append(headingRow, note, grid, verdict, wrapper);
   (byId(afterId) || document.querySelector(`.${afterId}`)).after(section);
   return (metrics, message, status = "", checks = []) => {
+    snapshot = resultText(topicNames[topic], metrics, message, checks);
+    copy.disabled = !checks.length;
     grid.replaceChildren(...metrics.map(([label, value]) => {
       const cell = document.createElement("div");
       const title = document.createElement("span");
@@ -117,6 +147,12 @@ const showMobileEvidence = createEvidence("mobile", "mobile-measure", "Measured 
 const showVisualEvidence = createEvidence("visual", "visual-specimen", "Browser image comparison against an unchanged reference at the same viewport. Maximum changed pixels: 0.1%; per-channel tolerance: 16 / 255.");
 const showAiEvidence = createEvidence("ai", "ai-result-wrap", "A generated draft is not a passing test; review and execution are separate.");
 const showCiEvidence = createEvidence("ci", "pipeline", "Actual GitHub Actions status, jobs and steps from the latest workflow run.");
+for (const [value, label] of [["boundary", "POST /api/evaluate · equals limit"], ["breach", "POST /api/evaluate · over limits"], ["malformed", "POST /api/evaluate · malformed JSON"]]) {
+  const option = document.createElement("option");
+  option.value = value;
+  option.textContent = label;
+  byId("api-preset").append(option);
+}
 
 const unitCasesButton = document.createElement("button");
 unitCasesButton.type = "button";
@@ -367,6 +403,8 @@ function readableTime(value) {
 }
 
 function clearSummary() {
+  currentPerfCopy = "";
+  byId("copy-perf-result").disabled = true;
   byId("summary-empty").hidden = false;
   byId("summary-result").hidden = true;
   byId("summary-detail").hidden = true;
@@ -383,8 +421,9 @@ function renderSummary(summary, profile, source = {}) {
   const decision = perfDecision(summary, config, source.exitCode);
   const { p95, errorRate, requests, p95LimitMs, errorLimit } = decision;
   const importedPeak = metricValue(summary, "configured_peak_vus", "value");
-  const peak = Number.isInteger(importedPeak) && importedPeak >= (profile === "spike" ? 5 : 1) && importedPeak <= MAX_LOCAL_PEAK_VUS
-    ? importedPeak : config.peakVus;
+  const recordedPeak = importedPeak ?? source.peakVus;
+  const knownPeak = Number.isInteger(recordedPeak) && recordedPeak >= (profile === "spike" ? 5 : 1) && recordedPeak <= MAX_LOCAL_PEAK_VUS;
+  const peak = knownPeak ? recordedPeak : config.peakVus;
   if (source.label?.startsWith("Opened")) {
     selectScenario(profile, false);
     history.replaceState(null, "", `#performance/${profile}`);
@@ -401,11 +440,12 @@ function renderSummary(summary, profile, source = {}) {
   byId("summary-errors").textContent = `${(errorRate * 100).toFixed(3)}%`;
   byId("summary-active").textContent = Number.isFinite(peakActive) ? String(Math.round(peakActive)) : "–";
   byId("summary-heap").textContent = Number.isFinite(heapMin) && Number.isFinite(heapMax) ? `${heapMin.toFixed(1)}–${heapMax.toFixed(1)} MB` : "–";
-  byId("summary-verdict").textContent = verdict.passed ? "WITHIN LIMITS" : "LIMIT BREACHED";
-  byId("summary-verdict").parentElement.className = `summary-verdict ${verdict.passed ? "pass" : "fail"}`;
-  byId("perf-outcome").className = `outcome-bar ${verdict.passed ? "pass" : "fail"}`;
+  const resultClass = decision.status === "PASS" ? "pass" : decision.status === "FAIL" ? "fail" : "";
+  byId("summary-verdict").textContent = decision.status === "PASS" ? "WITHIN LIMITS" : decision.status === "FAIL" ? "LIMIT BREACHED" : "INCOMPLETE EVIDENCE";
+  byId("summary-verdict").parentElement.className = `summary-verdict ${resultClass}`;
+  byId("perf-outcome").className = `outcome-bar ${resultClass}`;
   const sourceKind = source.label?.startsWith("Latest saved run") ? "SAVED RESULT" : source.label?.startsWith("Opened") ? "IMPORTED RESULT" : "LATEST RUN";
-  byId("perf-outcome-title").textContent = `${sourceKind} · ${verdict.passed ? "PASS" : "FAIL"}`;
+  byId("perf-outcome-title").textContent = `${sourceKind} · ${decision.status}`;
   byId("perf-outcome-detail").textContent = `${config.label} · ${requests.toLocaleString()} requests · p95 ${p95.toFixed(2)} / ${p95LimitMs} ms · errors ${(errorRate * 100).toFixed(3)} / ${(errorLimit * 100).toFixed(2)}% · ${readableTime(source.finishedAt)}`;
   byId("summary-empty").hidden = true;
   byId("summary-result").hidden = false;
@@ -419,7 +459,7 @@ function renderSummary(summary, profile, source = {}) {
   const statusCount = (name) => whole(metricValue(summary, name, "count") ?? (hasStatusCounts ? 0 : null));
   const rows = [
     ["Completed at", readableTime(source.finishedAt), "Time this summary became available"],
-    ["Configured peak", `${peak} VUs`, "Maximum planned virtual users"],
+    ["Configured peak", knownPeak ? `${peak} VUs` : "Not recorded", "Maximum planned virtual users"],
     ["Run ID", source.id || "Imported", "Identifies this result; changes on every new test"],
     ["Requests per second", Number.isFinite(requestRate) ? requestRate.toFixed(1) : "–", "Average across the whole run"],
     ["Failed requests", whole(Number.isFinite(failedCount) ? failedCount : requests * errorRate), "HTTP requests counted as failed by k6"],
@@ -448,7 +488,7 @@ function renderSummary(summary, profile, source = {}) {
   const importedConfig = scenarioWithPeak(profile, config, peak);
   const stressStage = { ramp5: 0, ramp12: 1, ramp24: 2, peak40: 3 };
   const phaseRows = phaseLabels[profile].map(([name, originalLabel]) => {
-    const label = profile === "stress" && name in stressStage ? `Ramp to ${importedConfig.stages[stressStage[name]].vus}` : originalLabel;
+    const label = profile === "stress" && name in stressStage ? knownPeak ? `Ramp to ${importedConfig.stages[stressStage[name]].vus}` : `Ramp stage ${stressStage[name] + 1}` : originalLabel;
     const phaseP95 = metricValue(summary, `phase_${name}_duration_ms`, "p(95)");
     const phaseErrors = metricValue(summary, `phase_${name}_failed`, "value");
     const phaseRequests = metricValue(summary, `phase_${name}_requests`, "count");
@@ -465,8 +505,49 @@ function renderSummary(summary, profile, source = {}) {
   const latencyStatus = verdict.checks.latencyPassed ? "PASS" : "FAIL";
   const errorStatus = verdict.checks.errorsPassed ? "PASS" : "FAIL";
   const message = byId("summary-message");
-  message.textContent = `p95 ${latencyStatus}: ${p95.toFixed(2)} ms vs ${p95LimitMs} ms limit. Errors ${errorStatus}: ${(errorRate * 100).toFixed(3)}% vs ${(errorLimit * 100).toFixed(2)}% limit. All recorded threshold decisions are listed above.${verdict.passed && errorRate > 0 ? " Some requests still failed; inspect the phases." : ""}`;
-  message.className = `inline-message ${verdict.passed ? "pass" : "fail"}`;
+  message.textContent = `p95 ${latencyStatus}: ${p95.toFixed(2)} ms vs ${p95LimitMs} ms limit. Errors ${errorStatus}: ${(errorRate * 100).toFixed(3)}% vs ${(errorLimit * 100).toFixed(2)}% limit. All recorded threshold decisions are listed above.${decision.status === "NOT VERIFIED" ? " Missing or unknown checks prevent an overall PASS. Run k6 again with the current QA Lab." : ""}${verdict.passed && errorRate > 0 ? " Some requests still failed; inspect the phases." : ""}`;
+  message.className = `inline-message ${resultClass}`;
+  const runLabel = source.id || `${source.label}:${source.finishedAt}`;
+  currentPerfCopy = resultText(`Performance / ${config.label}`, rows.map(([label, value]) => [label, value]), `${decision.status} · ${message.textContent}`, decision.checks, readableTime(source.finishedAt));
+  byId("copy-perf-result").disabled = false;
+  if (!recentPerfRuns.some((run) => run.id === runLabel)) {
+    const historySource = sourceKind === "IMPORTED RESULT" ? "Imported JSON" : sourceKind === "SAVED RESULT" ? "Saved JSON" : "Local k6";
+    recentPerfRuns.unshift({ id: runLabel, label: config.label, peak: knownPeak ? peak : null, requests, p95, p95LimitMs, errorRate, errorLimit, status: decision.status, finishedAt: source.finishedAt, source: historySource });
+    recentPerfRuns.length = Math.min(recentPerfRuns.length, 5);
+    renderRecentRuns();
+  }
+}
+
+function renderRecentRuns() {
+  byId("recent-runs").hidden = !recentPerfRuns.length;
+  byId("recent-run-rows").replaceChildren(...recentPerfRuns.map((run) => tableRow([
+    `${run.label} · ${run.source}`, readableTime(run.finishedAt), run.peak === null ? "Not recorded" : String(run.peak),
+    run.requests.toLocaleString(), `${run.p95.toFixed(2)} / ${run.p95LimitMs} ms`,
+    `${(run.errorRate * 100).toFixed(3)} / ${(run.errorLimit * 100).toFixed(2)}%`, run.status,
+  ], run.status === "PASS" ? "threshold-pass" : run.status === "FAIL" ? "threshold-fail" : "")));
+}
+
+async function connectedScenarios(code) {
+  const response = await fetch(`${bridgeBase}/scenarios`, { cache: "no-store", headers: { "X-QA-Bridge-Code": code }, signal: AbortSignal.timeout(8000) });
+  if (!response.ok) throw new Error("Update your local QA Lab from GitHub, run setup-windows.cmd and restart it; the connector's scenario data is unavailable");
+  const data = await response.json();
+  if (!["load", "stress", "spike", "soak"].every((name) => Array.isArray(data.scenarios?.[name]?.stages))) throw new Error("Invalid local scenario data. Update and restart the local QA Lab.");
+  return data.scenarios;
+}
+
+function useConnectedScenarios(configs, code) {
+  const requestedPeak = Number(byId("perf-vus").value);
+  scenarios = configs;
+  bridgeCode = code;
+  bridgeConnected = true;
+  heapHistory.length = 0;
+  latestAutoId = null;
+  latestAutoStatus = null;
+  manualSummary = false;
+  clearSummary();
+  selectScenario(selectedScenario, false);
+  byId("perf-vus").value = String(requestedPeak);
+  updatePeak();
 }
 
 function showRunState(title, detail, failed = false) {
@@ -481,6 +562,7 @@ async function importSummary(file) {
   if (!file) return;
   manualSummary = true;
   autoIdAtImport = latestAutoId;
+  autoStatusAtImport = latestAutoStatus;
   clearSummary();
   try {
     if (file.size > 5_000_000) throw new Error("Summary file is too large.");
@@ -516,9 +598,18 @@ async function pollLatestRun() {
     byId("k6-install").hidden = data.canRun || (data.reason === "hosted" && !bridgeConnected);
     updatePeak();
     const run = data.run;
-    if (!run || runStartPending) return;
-    if (manualSummary && run.id === autoIdAtImport) return;
-    if (manualSummary && run.id !== autoIdAtImport) manualSummary = false;
+    if (runStartPending) return;
+    if (!run) {
+      if (latestAutoId && !manualSummary) {
+        latestAutoId = null;
+        latestAutoStatus = null;
+        clearSummary();
+        showRunState("No result on this runner", "The local server restarted or has no completed run. Run k6 again; earlier tab results remain in Recent runs.");
+      }
+      return;
+    }
+    if (manualSummary && run.id === autoIdAtImport && run.status === autoStatusAtImport) return;
+    if (manualSummary) manualSummary = false;
     if (run.id === latestAutoId && run.status === latestAutoStatus) return;
     latestAutoId = run.id;
     latestAutoStatus = run.status;
@@ -534,6 +625,7 @@ async function pollLatestRun() {
           finishedAt: run.finishedAt,
           exitCode: run.exitCode,
           id: run.id,
+          peakVus: run.peakVus,
         });
         showRunState(run.source === "saved" ? "Saved k6 result loaded" : "Latest test completed", `${run.scenario.toUpperCase()} · ${readableTime(run.finishedAt)} · ${run.source === "saved" ? "saved file found on this computer" : "result updated automatically"}`);
       } catch (error) {
@@ -588,6 +680,7 @@ async function startK6Run() {
   } catch (error) {
     manualSummary = true;
     autoIdAtImport = latestAutoId;
+    autoStatusAtImport = latestAutoStatus;
     showRunState("Could not start k6", error.message, true);
     byId("perf-outcome").className = "outcome-bar fail";
     byId("perf-outcome-title").textContent = "Could not start k6";
@@ -610,17 +703,12 @@ async function connectLocalK6() {
     const response = await fetch(`${bridgeBase}/status`, { cache: "no-store", headers: { "X-QA-Bridge-Code": entered }, signal: AbortSignal.timeout(8000) });
     const result = await response.json();
     if (!response.ok) throw new Error(result.message || "Connection rejected. Check the code and allowed site origin.");
-    bridgeCode = entered;
-    bridgeConnected = true;
+    useConnectedScenarios(await connectedScenarios(entered), entered);
     byId("bridge-code").value = "";
     byId("bridge-status").textContent = result.canRun ? "Connected. k6, live counters and probe use this computer." : "Connected, but k6 is missing. Install it and restart QA Lab.";
-    latestAutoId = null;
-    latestAutoStatus = null;
     await pollLatestRun();
     await pollTelemetry();
   } catch (error) {
-    bridgeConnected = false;
-    localK6Ready = false;
     byId("bridge-status").textContent = `Could not connect: ${error.message}. Start QA Lab and check the browser's local-network permission.`;
   } finally {
     byId("bridge-connect").disabled = false;
@@ -643,21 +731,18 @@ async function autoConnectK6() {
   try {
     const deadline = Date.now() + 35_000;
     while (Date.now() < deadline) {
+      let response;
       try {
-        const response = await fetch(`${bridgeBase}/status`, { cache: "no-store", headers: { "X-QA-Bridge-Code": token }, signal: AbortSignal.timeout(2000) });
-        if (response.ok) {
-          const data = await response.json();
-          bridgeCode = token;
-          bridgeConnected = true;
-          latestAutoId = null;
-          latestAutoStatus = null;
-          heapHistory.length = 0;
-          byId("bridge-status").textContent = data.canRun ? "Connected. k6 and the test API run on this computer. Results appear on this page." : "QA Lab connected, but k6 is missing. Run setup-windows.cmd, then reconnect.";
-          await pollLatestRun();
-          await pollTelemetry();
-          return;
-        }
+        response = await fetch(`${bridgeBase}/status`, { cache: "no-store", headers: { "X-QA-Bridge-Code": token }, signal: AbortSignal.timeout(2000) });
       } catch { /* The protocol handler or browser permission prompt may still be pending. */ }
+      if (response?.ok) {
+        const data = await response.json();
+        useConnectedScenarios(await connectedScenarios(token), token);
+        byId("bridge-status").textContent = data.canRun ? "Connected. k6 and the test API run on this computer. Results appear on this page." : "QA Lab connected, but k6 is missing. Run setup-windows.cmd, then reconnect.";
+        await pollLatestRun();
+        await pollTelemetry();
+        return;
+      }
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }
     throw new Error("No local connector found. Download the project, run setup-windows.cmd once, then Connect k6 again. Allow the browser's local-network permission.");
@@ -719,13 +804,14 @@ async function sendApiRequest() {
   byId("api-body").disabled = true;
   const name = byId("api-preset").value;
   const preset = apiPresets[name];
+  const requestBody = byId("api-body").value;
   showApiEvidence([], "RUNNING · Waiting for this request's response.");
   const started = performance.now();
   try {
     const response = await fetch(preset.url, {
       method: preset.method,
       headers: preset.method === "POST" ? { "Content-Type": "application/json" } : {},
-      body: preset.method === "POST" ? byId("api-body").value : undefined,
+      body: preset.method === "POST" ? requestBody : undefined,
       signal: AbortSignal.timeout(15_000),
     });
     const body = await response.text();
@@ -734,17 +820,32 @@ async function sendApiRequest() {
     let parsed;
     try { parsed = JSON.parse(body); byId("api-response").textContent = JSON.stringify(parsed, null, 2); }
     catch { byId("api-response").textContent = body; }
-    const expectedStatus = { health: 200, metrics: 200, evaluate: 200, invalid: 400, missing: 404 }[name];
+    const evaluates = ["evaluate", "boundary", "breach"].includes(name);
+    let expectedEvaluation;
+    if (evaluates) {
+      try { expectedEvaluation = evaluateThresholds(JSON.parse(requestBody)); } catch { /* Malformed input cannot meet a valid-request contract. */ }
+    }
+    const evaluationMatches = expectedEvaluation?.valid && parsed?.valid === true
+      && parsed.passed === expectedEvaluation.passed
+      && Object.entries(expectedEvaluation.values).every(([key, value]) => parsed.values?.[key] === value)
+      && Object.entries(expectedEvaluation.checks).every(([key, value]) => parsed.checks?.[key] === value);
+    const expectedStatus = { health: 200, metrics: 200, evaluate: 200, boundary: 200, breach: 200, invalid: 400, malformed: 400, missing: 404 }[name];
     const contract = {
       health: parsed?.service === "qa-lab" && parsed?.status === "ready",
       metrics: Number.isFinite(parsed?.completed) && Number.isFinite(parsed?.capacity),
-      evaluate: typeof parsed?.passed === "boolean" && parsed?.valid === true,
+      evaluate: evaluationMatches,
+      boundary: evaluationMatches,
+      breach: evaluationMatches,
       invalid: Boolean(parsed?.fields?.p95Ms),
+      malformed: parsed?.error === "invalid_json",
       missing: parsed?.error === "not_found",
     }[name];
     const expectations = {
       health: 'service = "qa-lab", status = "ready"', metrics: "completed and capacity are finite numbers",
-      evaluate: "valid = true; passed is boolean", invalid: "fields.p95Ms contains a validation message",
+      evaluate: "valid = true; result, normalized values and checks match the input",
+      boundary: "Equality produces valid = true, passed = false and matching checks",
+      breach: "Exceeded limits produce valid = true, passed = false and matching checks",
+      invalid: "fields.p95Ms contains a validation message", malformed: 'error = "invalid_json"',
       missing: 'error = "not_found"',
     };
     const json = response.headers.get("content-type")?.includes("application/json") && parsed !== undefined;
@@ -753,6 +854,7 @@ async function sendApiRequest() {
       ["HTTP status", String(expectedStatus), String(response.status), response.status === expectedStatus ? "PASS" : "FAIL"],
       ["Content type / parsing", "Valid application/json", response.headers.get("content-type") || "Missing", json ? "PASS" : "FAIL"],
       ["Response fields", expectations[name], contract ? "Matched" : "Mismatch; inspect the response shown above", contract ? "PASS" : "FAIL"],
+      ...(evaluates ? [["Evaluation outcome", expectedEvaluation?.valid ? expectedEvaluation.passed ? "PASS" : "FAIL" : "Valid metrics required", parsed?.valid ? parsed.passed ? "PASS" : "FAIL" : "Not returned", evaluationMatches ? "PASS" : "FAIL"]] : []),
       ["Response time", "No configured limit", byId("api-response-time").textContent, "INFO"],
     ]);
   } catch (error) {
@@ -1126,6 +1228,8 @@ byId("copy-perf-command").addEventListener("click", () => copyText(byId("perf-co
 byId("perf-vus").addEventListener("input", updatePeak);
 byId("run-probe").addEventListener("click", runProbe);
 byId("run-k6").addEventListener("click", startK6Run);
+byId("copy-perf-result").addEventListener("click", () => copyText(currentPerfCopy));
+byId("clear-recent-runs").addEventListener("click", () => { recentPerfRuns.length = 0; renderRecentRuns(); });
 byId("bridge-connect").addEventListener("click", connectLocalK6);
 byId("connect-k6").addEventListener("click", autoConnectK6);
 unitCasesButton.addEventListener("click", runUnitCases);

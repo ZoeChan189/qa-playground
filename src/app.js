@@ -93,13 +93,14 @@ export function createApp({ aiFetch = fetch, perfRunner = createLocalPerfRunner(
     response.json({ version: appVersion, commit: /^[a-f0-9]{7,40}$/i.test(commit) ? commit : null });
   });
 
-  app.get("/api/perf/scenarios", (_request, response) => {
+  function sendScenarios(_request, response) {
     try {
       const hold = soakSteadySeconds(process.env.SOAK_STEADY || "90s");
       const soak = { ...perfScenarios.soak, stages: perfScenarios.soak.stages.map((stage, index) => index === 1 ? { ...stage, seconds: hold } : stage) };
       response.json({ scenarios: { ...perfScenarios, soak }, target: "/api/perf/work", localOnlyByDefault: true });
     } catch (error) { response.status(400).json({ error: "invalid_soak_duration", message: error.message }); }
-  });
+  }
+  app.get("/api/perf/scenarios", sendScenarios);
 
   app.get("/api/perf/metrics", (_request, response) => {
     response.json(telemetry.snapshot());
@@ -153,6 +154,7 @@ export function createApp({ aiFetch = fetch, perfRunner = createLocalPerfRunner(
     app.get("/local-bridge/status", async (_request, response) => response.json(await perfRunner.latest()));
     app.get("/local-bridge/runs/latest", async (_request, response) => response.json(await perfRunner.latest()));
     app.get("/local-bridge/metrics", (_request, response) => response.json(telemetry.snapshot()));
+    app.get("/local-bridge/scenarios", sendScenarios);
     app.get("/local-bridge/probe", perfWork);
     app.post("/local-bridge/runs", (request, response) => {
       const { scenario, peakVus } = request.body ?? {};

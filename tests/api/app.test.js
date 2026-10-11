@@ -55,7 +55,7 @@ describe("QA Lab API", () => {
   it("identifies the deployed version and never caches mutable app assets", async () => {
     vi.stubEnv("RENDER_GIT_COMMIT", "a".repeat(40));
     const version = await request(app).get("/api/version");
-    expect(version.body).toEqual({ version: "1.1.1", commit: "a".repeat(40) });
+    expect(version.body).toEqual({ version: "1.1.2", commit: "a".repeat(40) });
     expect(version.headers["cache-control"]).toBe("no-store");
     for (const asset of ["/", "/app.js", "/styles.css", "/shared/test-evidence.js", "/vendor/html2canvas.js", "/some-route"]) {
       const result = await request(app).get(asset);
@@ -108,6 +108,11 @@ describe("QA Lab API", () => {
     expect((await headers(request(bridge).get("/local-bridge/status"))).status).toBe(401);
     expect((await headers(request(bridge).get("/local-bridge/status")).set("X-QA-Bridge-Code", "secret-pair-code")).body.canRun).toBe(true);
     expect((await headers(request(bridge).get("/local-bridge/metrics")).set("X-QA-Bridge-Code", "secret-pair-code")).body.capacity).toBe(24);
+    vi.stubEnv("SOAK_STEADY", "3m");
+    const profiles = await headers(request(bridge).get("/local-bridge/scenarios")).set("X-QA-Bridge-Code", "secret-pair-code");
+    expect(profiles.body.scenarios.soak.stages[1].seconds).toBe(180);
+    expect((await headers(request(bridge).get("/local-bridge/scenarios"))).status).toBe(401);
+    expect((await request(bridge).get("/local-bridge/scenarios").set("Host", "127.0.0.1:4173").set("Origin", "https://evil.example").set("X-QA-Bridge-Code", "secret-pair-code")).status).toBe(403);
     expect((await headers(request(bridge).get("/local-bridge/probe?work=1")).set("X-QA-Bridge-Code", "secret-pair-code")).body.iterations).toBe(1000);
     expect((await request(bridge).get("/local-bridge/status").set("Host", "127.0.0.1:4173")
       .set("Origin", "https://evil.example").set("X-QA-Bridge-Code", "secret-pair-code")).status).toBe(403);

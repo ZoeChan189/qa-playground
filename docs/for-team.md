@@ -6,6 +6,16 @@ Repo chung: https://github.com/ZoeChan189/qa-playground
 
 Mỗi thành viên tải cùng mã nguồn và **chạy QA Lab cùng k6 trên máy của mình**. Sau khi cài bộ kết nối một lần, các bạn có thể mở trang Render, bấm **Connect k6** rồi **Run local k6**. Trang tự mở bộ chạy trên máy bạn và tự hiện kết quả; không cần mở hay tìm file JSON. Tải test chạy trên máy thành viên, không chạy trên Render.
 
+## Bổ sung ở bản 1.1.2
+
+- **Recent runs** trong Performance giữ năm kết quả mới nhất đã hiện trên tab này, để nhìn lại p95, Error rate, VUs và ngưỡng của từng lượt. Đổi topic vẫn còn bảng; tải lại trang thì lịch sử này mất. **Clear** chỉ xóa lịch sử, không xóa kết quả hiện tại.
+- **Copy result** sao chép giá trị và bảng quyết định của topic đang xem. Dán vào Word bằng Ctrl+V để ghi lại bằng chứng. Không cần tìm file JSON. Nút không sao chép ô nhập API key.
+- API có thêm **equals limit**, **over limits**, **malformed JSON**. Ví dụ p95 = 500 và limit = 500: phép tính phải trả `passed: false`. Nếu API trả đúng như vậy thì API contract test vẫn PASS, vì server tính đúng điều kiện.
+- JSON cũ thiếu kiểm tra phản hồi thành công có thể hiện **NOT VERIFIED**, không phải PASS. Chạy lại bằng bản mới để có dữ liệu đầy đủ. Thiếu số VUs sẽ hiện **Not recorded**, không tự đoán.
+- Kết nối hosted giờ đọc cấu hình Soak của máy local. Nếu báo phải cập nhật connector, tải bản mới, dừng server cũ, chạy `setup-windows.cmd`, mở lại và kết nối lại.
+
+Demo ngắn dễ giải thích: chạy Load 5 VUs, Stress 40 VUs rồi Stress 120 VUs, đọc ba dòng Recent runs; sau đó chuyển Spike và xem Burst/Recovery. Đừng hứa một mức VUs chắc chắn FAIL trên mọi máy. Cuối cùng demo API bằng ngưỡng và Visual Baseline/Shifted; thay đổi cố ý giúp giải thích vì sao một case âm có thể là bài test thành công.
+
 ## 1. Cài đặt một lần trên mỗi máy Windows
 
 1. Mở [repo GitHub](https://github.com/ZoeChan189/qa-playground), chọn **Code > Download ZIP**, rồi **giải nén** vào một thư mục cố định. Không chạy bên trong ZIP.
