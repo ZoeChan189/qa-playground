@@ -65,7 +65,7 @@ const verifiedContract = {
   api: "GET /api/health returns 200 JSON. POST /api/evaluate accepts p95Ms, errorRate (0..1), p95LimitMs and errorLimit (0..1); invalid values return 400 with field errors. GET /api/plans/:id returns 404 for missing IDs. Unknown /api routes return 404 JSON.",
   e2e: "The plan form collects name (3..40 characters), scenario (stress, spike or soak), targetVus (integer 1..50) and notes (up to 200 characters). Review, back and save call POST /api/plans; GET /api/plans/:id retrieves a saved plan. Plans are in memory and disappear after restart.",
   unit: "evaluateThresholds in public/shared/evaluation.js requires nonnegative p95Ms, errorRate from 0 to 1, positive p95LimitMs, and errorLimit above 0 up to 1. A pass requires p95Ms < p95LimitMs AND errorRate < errorLimit; equality fails.",
-  mobile: "The app is responsive mobile web, not a native Android/iOS app. At a 412 px viewport, verify no page-level horizontal overflow, usable navigation and the same plan workflow. Playwright uses a mobile Chromium project.",
+  mobile: "QA Calculator runs at /calculator/index.html and as an installable Android hybrid APK with bundled offline assets. Both share the same mathjs-backed scalar calculation engine, keyboard, DEG/RAD modes, local history and 14 expected/actual cases. Test arithmetic precedence, 0.1+0.2=0.3, sqrt(81)=9, sin(30)=0.5 in DEG, sin(pi/2)=1 in RAD, division by zero errors, clear/delete, portrait/landscape and offline Android execution. Playwright mobile emulation checks web layout only, not Android installation/lifecycle. Browser layout controls must be at least 24x24 px with no page-level overflow.",
 };
 
 export async function generateAiCases({ topic, requirement, apiKey, model, fetchImpl = fetch }) {

@@ -1,0 +1,11 @@
+{
+  "name": "qa-calculator-android",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "prepare:web": "node prepare-web.mjs", "sync": "npm run prepare:web && cap sync android", "build": "npm run sync && cd android && gradlew assembleDebug" },
+  "dependencies": { "@capacitor/core": "8.5.3", "@capacitor/android": "8.5.3" },
+  "devDependencies": { "@capacitor/cli": "8.5.3" },
+  "overrides": { "xcode": { "uuid": "^11.1.1" } },
+  "engines": { "node": ">=22" }
+}

@@ -212,6 +212,9 @@ textarea { resize: vertical; line-height: 1.5; }
 .mobile-measure div { display: grid; gap: 8px; padding: 18px; border-right: 1px solid var(--line); }
 .mobile-measure div:last-child { border-right: 0; }
 .mobile-measure strong { font-size: 19px; }
+.mobile-app-meta { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-bottom: 20px; color: var(--muted); font-size: 12px; }
+.mobile-app-meta a { color: var(--teal-dark); }
+.calculator-frame { display: block; width: 100%; min-height: 720px; height: 780px; border: 0; background: var(--canvas); }
 .visual-toggle { margin-bottom: 16px; }
 .visual-specimen { width: min(100%, 760px); border: 1px solid #ccd9df; border-radius: 6px; background: white; overflow: hidden; }
 .specimen-heading { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 24px; }

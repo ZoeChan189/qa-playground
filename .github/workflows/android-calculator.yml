@@ -1,0 +1,90 @@
+name: Build and test Android Calculator
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'public/calculator/**'
+      - 'mobile/calculator/**'
+      - 'package-lock.json'
+      - '.github/workflows/android-calculator.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-calculator
+  cancel-in-progress: false
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            mobile/calculator/package-lock.json
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Prepare shared offline assets
+        run: |
+          npm ci
+          npm ci --prefix mobile/calculator
+          npm run sync --prefix mobile/calculator
+          chmod +x mobile/calculator/android/gradlew
+      - name: Build installable demo APK
+        working-directory: mobile/calculator/android
+        run: ./gradlew assembleDebug --no-daemon
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Install and test APK on Android emulator offline
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: |
+            adb shell svc wifi disable
+            adb shell svc data disable
+            cd mobile/calculator/android && ./gradlew connectedDebugAndroidTest --no-daemon
+      - name: Verify APK and prepare checksums
+        run: |
+          mkdir -p apk-release
+          cp mobile/calculator/android/app/build/outputs/apk/debug/app-debug.apk apk-release/qa-calculator.apk
+          TOOLS=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
+          "$TOOLS/apksigner" verify --verbose apk-release/qa-calculator.apk
+          "$TOOLS/aapt" dump badging apk-release/qa-calculator.apk
+          cd apk-release && sha256sum qa-calculator.apk > SHA256SUMS.txt
+      - name: Upload APK and native test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-calculator-android
+          path: |
+            apk-release/
+            mobile/calculator/android/app/build/reports/androidTests/
+            mobile/calculator/android/app/build/outputs/androidTest-results/
+      - name: Publish tested classroom APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(node -p "require('./mobile/calculator/package.json').version")
+          TAG="calculator-v$VERSION"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release already exists; bump the Android app version before publishing an update."
+          else
+            gh release create "$TAG" apk-release/qa-calculator.apk apk-release/SHA256SUMS.txt --target "$GITHUB_SHA" --title "QA Calculator $VERSION (Android demo)" --notes "Classroom hybrid Android app, Android 7.0+. Bundled offline calculator shares the web UI and engine. Debug-signed APK for direct installation, not a Play Store production release. Android emulator tests passed before publication. Rebuilt APKs from another signing key require uninstalling the older app."
+          fi

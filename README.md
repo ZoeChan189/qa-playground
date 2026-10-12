@@ -21,7 +21,7 @@ If Node.js is missing or older than 20, install [Node.js 20+](https://nodejs.org
 - **Unit:** edit latency, error rate and thresholds; compare pass, boundary and invalid results.
 - **API:** send preset valid/invalid requests and inspect HTTP status and JSON.
 - **Web E2E:** create, review and save a test plan through the real UI and API.
-- **Mobile web:** use a narrow screen or Playwright's mobile project; check overflow and repeat the plan flow.
+- **Mobile:** use QA Calculator in the browser or install its Android APK from the Mobile tab. Both builds use the same calculator UI/engine, including 14 expected/actual cases. Browser layout checks remain separate from Android device tests.
 - **Visual:** **Compare images** shows changed pixels, percentage, image dimensions, tolerance and PASS/FAIL against a browser-rendered unchanged reference. `npm run test:visual` separately compares against the checked-in Playwright screenshot. The shifted variant fails both comparisons.
 - **AI-assisted:** use the group Gemini key or enter a personal Gemini API key, load available models, then generate a draft. Review and run the proposed test; generation alone is not a pass.
 - **CI/CD:** the page displays the latest actual workflow, commit, jobs and individual step conclusions. **Refresh results** fetches the latest state.
@@ -32,7 +32,7 @@ Every topic has an **Expected / limit**, **Observed**, **Result** table. Unit **
 
 See [the case matrix](docs/demo-cases.md) and [the performance guide](docs/performance.md) for class demonstrations and interpretation.
 
-Version **1.1.2** prevents an overall PASS when summary checks are missing or unknown, replaces imported results when an active k6 run finishes, and reads Soak timing from the connected local runner. It also adds recent runs, result copying and stronger API calculation checks. See [the latest Vietnamese audit](docs/audit-2026-10-11.md) and [the earlier error catalogue](docs/audit-2026-10-08.md).
+Version **1.2.0** adds a shared Web/Android calculator and a downloadable offline classroom APK. See [the Vietnamese mobile guide](docs/mobile-calculator.md). Version 1.1.2 fixed incomplete summaries, stale results, local Soak timing and API assertions; see [the audit](docs/audit-2026-10-11.md) and [the earlier error catalogue](docs/audit-2026-10-08.md).
 
 ## Automated tests
 
@@ -71,6 +71,8 @@ Keep the hosted page and local connector on the current release. On connection t
 The target performs real asynchronous PBKDF2 work and caps concurrent jobs at 24, returning HTTP 503 above capacity. k6 records real response times, error rates, request counts and phase comparisons. The API reports actual Node heap usage, not a simulated memory value. An overall threshold can pass even when some requests fail; inspect the phase table too. These short, single-machine tests illustrate methods, not production capacity. See [performance methodology and caveats](docs/performance.md).
 
 ## Hosting
+
+The classroom Android calculator APK is built/tested separately by GitHub Actions and distributed through GitHub Releases. No Android tools are installed by the ordinary QA Lab startup scripts. See [mobile installation, cases and build instructions](docs/mobile-calculator.md).
 
 Use a provider that runs a Node.js service. Set install/build to `npm ci`, start to `npm start`, and expose the assigned `PORT`. Production mode listens on all interfaces; local development listens only on `127.0.0.1` unless `HOST` is set. GitHub Pages or other static-only hosting cannot run this API. With `NODE_ENV=production`, the expensive endpoint admits at most two requests per second per server instance (HTTP 429 after that), so the hosted site is for browsing and light probes. Run substantial k6 traffic against a local copy to avoid shared-server load or fees. There is no app-wide authentication; the group-key AI endpoint requires a group code, while personal-key mode uses each visitor's key for a request. Saved test plans and telemetry are in memory and disappear on restart; do not enter personal data. Multiple server instances do not share plans or metrics.
 

@@ -1,0 +1,6 @@
+{
+  "appId": "com.zoechan.qalab.calculator",
+  "appName": "QA Calculator",
+  "webDir": "www",
+  "android": { "allowMixedContent": false, "webContentsDebuggingEnabled": true }
+}

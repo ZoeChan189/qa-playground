@@ -326,7 +326,10 @@ export function createApp({ aiFetch = fetch, perfRunner = createLocalPerfRunner(
   });
 
   app.use("/icons", express.static(iconsDir, { maxAge: "1d" }));
+  app.use("/calculator/icons", express.static(iconsDir, { maxAge: "1d" }));
   const freshAssetHeaders = { "Cache-Control": "no-store" };
+  app.get("/calculator/vendor/math.js", (_request, response) => response.sendFile(path.resolve(currentDir, "../node_modules/mathjs/lib/browser/math.js"), { headers: freshAssetHeaders }));
+  app.get("/downloads/qa-calculator.apk", (_request, response) => response.redirect(302, "https://github.com/ZoeChan189/qa-playground/releases/download/calculator-v1.0.0/qa-calculator.apk"));
   app.get("/vendor/html2canvas.js", (_request, response) => response.sendFile(path.resolve(currentDir, "../node_modules/html2canvas/dist/html2canvas.esm.js"), { headers: freshAssetHeaders }));
   app.use(express.static(publicDir, { etag: false, lastModified: false, setHeaders: (response) => response.set(freshAssetHeaders) }));
   app.get("/{*path}", (_request, response) => response.sendFile(path.join(publicDir, "index.html"), { headers: freshAssetHeaders }));

@@ -5,3 +5,13 @@ results/
 .env
 .DS_Store
 npm-debug.log*
+mobile/calculator/www/
+mobile/calculator/android/.gradle/
+mobile/calculator/android/**/build/
+mobile/calculator/android/local.properties
+mobile/calculator/android/app/src/main/assets/public/
+mobile/calculator/android/app/src/main/assets/capacitor.config.json
+mobile/calculator/android/app/src/main/assets/capacitor.plugins.json
+mobile/calculator/android/capacitor-cordova-android-plugins/
+*.keystore
+*.jks

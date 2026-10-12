@@ -4,7 +4,7 @@ import { MAX_LOCAL_PEAK_VUS, scenarioWithPeak } from "./shared/perf-profile.js";
 import { comparePixels, metricValue, perfDecision } from "./shared/test-evidence.js";
 
 const byId = (id) => document.getElementById(id);
-const topicNames = { performance: "Performance", unit: "Unit", api: "API", e2e: "Web E2E", mobile: "Mobile web", visual: "Visual", ai: "AI-assisted", ci: "CI/CD" };
+const topicNames = { performance: "Performance", unit: "Unit", api: "API", e2e: "Web E2E", mobile: "Mobile", visual: "Visual", ai: "AI-assisted", ci: "CI/CD" };
 const profileCopy = {
   load: { title: "Load: steady baseline", purpose: "Establish normal response time and throughput before increasing traffic.", context: "Load: confirm the expected baseline" },
   stress: { title: "Stress: ramp to capacity", purpose: "Increase users gradually to locate the point where latency or HTTP 503 responses rise.", context: "Stress: find the point where latency or errors rise" },
@@ -1260,6 +1260,13 @@ for (const id of ["ai-topic", "ai-requirement", "ai-model", "ai-personal-key", "
 byId("view-ai").querySelectorAll(".checklist input").forEach((box) => box.addEventListener("change", updateAiEvidence));
 window.addEventListener("hashchange", syncRoute);
 window.addEventListener("resize", () => { if (byId("view-mobile").classList.contains("active")) measureMobile(); });
+window.addEventListener("message", (event) => {
+  const frame = byId("mobile-calculator");
+  if (event.origin === location.origin && event.source === frame.contentWindow && event.data?.type === "qa-calculator-size"
+    && Number.isFinite(event.data.height) && event.data.height > 0 && event.data.height < 20000) {
+    frame.style.height = `${Math.max(720, event.data.height)}px`;
+  }
+});
 
 updateApiPreset();
 buildAiPrompt();

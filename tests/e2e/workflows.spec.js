@@ -195,7 +195,7 @@ test("mobile navigation, plan form and page width remain usable", async ({ page 
   await page.goto("/");
   const dimensions = await page.evaluate(() => ({ width: document.documentElement.clientWidth, content: document.documentElement.scrollWidth }));
   expect(dimensions.content).toBeLessThanOrEqual(dimensions.width);
-  await page.getByRole("button", { name: "Mobile web" }).click();
+  await page.getByRole("button", { name: "Mobile", exact: true }).click();
   await page.getByRole("button", { name: "Check layout" }).click();
   await expect(page.locator("#mobile-overflow")).toHaveText("None");
   await expect(page.locator("#view-mobile .evidence-panel")).toContainText("PASS");

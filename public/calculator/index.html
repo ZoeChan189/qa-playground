@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#087e83" />
+    <title>QA Calculator</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="./vendor/math.js" defer></script>
+    <script type="module" src="./app.js"></script>
+  </head>
+  <body>
+    <header class="app-header"><strong>QA Calculator</strong><span id="calc-platform">Web</span></header>
+    <main>
+      <div class="calculator-layout">
+        <section class="calculator" aria-label="Scientific calculator">
+          <div class="mode-row"><div class="angle-mode" role="group" aria-label="Angle mode"><button id="calc-deg" type="button" aria-pressed="true">DEG</button><button id="calc-rad" type="button" aria-pressed="false">RAD</button></div><span id="calc-answer-indicator">Ans: 0</span></div>
+          <div class="display"><label for="calc-expression">Expression</label><input id="calc-expression" type="text" autocomplete="off" spellcheck="false" maxlength="256" inputmode="decimal" aria-label="Calculation expression" /><output id="calc-result" aria-live="polite">0</output><p id="calc-status" role="status">Ready</p></div>
+          <div class="scientific-keys" aria-label="Scientific operations">
+            <button type="button" data-insert="sin(" aria-label="Sine">sin</button><button type="button" data-insert="cos(" aria-label="Cosine">cos</button><button type="button" data-insert="tan(" aria-label="Tangent">tan</button><button type="button" data-insert="pi" aria-label="Pi">&pi;</button><button type="button" data-insert="e" aria-label="Euler constant">e</button>
+            <button type="button" data-insert="sqrt(" aria-label="Square root">&radic;</button><button type="button" data-action="square" aria-label="Square">x&sup2;</button><button type="button" data-insert="^" aria-label="Power">x&#696;</button><button type="button" data-insert="log(" aria-label="Base ten logarithm">log</button><button type="button" data-insert="ln(" aria-label="Natural logarithm">ln</button>
+          </div>
+          <div class="main-keys" aria-label="Calculator keypad">
+            <button id="calc-clear" class="clear-key" type="button" data-action="clear" aria-label="All clear">AC</button><button id="calc-delete" type="button" data-action="delete" aria-label="Delete last character" title="Delete last character"><img src="./icons/delete.svg" alt="" /></button><button type="button" data-action="percent" aria-label="Percent">%</button><button id="calc-key-divide" class="operator-key" type="button" data-insert="/" aria-label="Divide">&divide;</button>
+            <button id="calc-key-7" type="button" data-insert="7">7</button><button id="calc-key-8" type="button" data-insert="8">8</button><button id="calc-key-9" type="button" data-insert="9">9</button><button id="calc-key-multiply" class="operator-key" type="button" data-insert="*" aria-label="Multiply">&times;</button>
+            <button id="calc-key-4" type="button" data-insert="4">4</button><button id="calc-key-5" type="button" data-insert="5">5</button><button id="calc-key-6" type="button" data-insert="6">6</button><button class="operator-key" type="button" data-insert="-" aria-label="Subtract">&minus;</button>
+            <button id="calc-key-1" type="button" data-insert="1">1</button><button id="calc-key-2" type="button" data-insert="2">2</button><button id="calc-key-3" type="button" data-insert="3">3</button><button id="calc-key-add" class="operator-key" type="button" data-insert="+" aria-label="Add">+</button>
+            <button type="button" data-action="negate" aria-label="Change sign">+/&minus;</button><button id="calc-key-0" type="button" data-insert="0">0</button><button type="button" data-insert="." aria-label="Decimal point">.</button><button id="calc-equals" class="equals-key" type="button" data-action="evaluate" aria-label="Calculate">=</button>
+            <button type="button" data-insert="(" aria-label="Open parenthesis">(</button><button type="button" data-insert=")" aria-label="Close parenthesis">)</button><button type="button" data-insert="ans" aria-label="Previous answer">Ans</button><button type="button" data-action="reciprocal" aria-label="Reciprocal">1/x</button>
+          </div>
+        </section>
+        <section class="history-section" aria-labelledby="history-title"><div class="section-heading"><h2 id="history-title">History</h2><button id="calc-clear-history" class="icon-button" type="button" aria-label="Clear calculation history" title="Clear history"><img src="./icons/eraser.svg" alt="" /></button></div><p id="calc-history-empty">No calculations yet</p><ol id="calc-history"></ol></section>
+      </div>
+      <section class="test-section" aria-labelledby="cases-title"><div class="section-heading"><h2 id="cases-title">Calculator test cases</h2><button id="calc-run-cases" class="test-button" type="button"><img src="./icons/play.svg" alt="" />Run key cases</button></div><p id="calc-case-verdict" role="status">NOT RUN</p><div class="test-table-wrap" hidden><table><thead><tr><th>Case / input</th><th>Expected</th><th>Actual</th><th>Result</th></tr></thead><tbody id="calc-case-rows"></tbody></table></div></section>
+    </main>
+  </body>
+</html>
