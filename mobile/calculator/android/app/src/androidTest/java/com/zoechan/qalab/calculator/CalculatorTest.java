@@ -5,7 +5,6 @@ import static org.junit.Assert.assertTrue;
 
 import android.content.pm.ActivityInfo;
 import android.webkit.WebView;
-import android.graphics.Bitmap;
 import androidx.test.ext.junit.rules.ActivityScenarioRule;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
@@ -17,8 +16,6 @@ import org.junit.runner.RunWith;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
-import java.io.File;
-import java.io.FileOutputStream;
 
 @RunWith(AndroidJUnit4.class)
 public class CalculatorTest {
@@ -69,7 +66,6 @@ public class CalculatorTest {
     @Test public void allExpectedCasesMatchInsideTheInstalledApk() throws Exception {
         script("document.getElementById('calc-run-cases').click()");
         assertEquals("PASS - 14 / 14 cases matched", script("document.getElementById('calc-case-verdict').textContent"));
-        screenshot("calculator-portrait.png");
     }
 
     @Test public void rotationKeepsTheCurrentCalculation() throws Exception {
@@ -80,7 +76,6 @@ public class CalculatorTest {
         script("document.getElementById('calc-equals').click()");
         assertEquals("20", script("document.getElementById('calc-result').textContent"));
         assertEquals("false", script("document.documentElement.scrollWidth>document.documentElement.clientWidth"));
-        screenshot("calculator-landscape.png");
     }
 
     @Test public void keypadTargetsFitTheInstalledAndroidViewport() throws Exception {
@@ -89,12 +84,4 @@ public class CalculatorTest {
         assertEquals("true", script("document.querySelector('.app-header').getBoundingClientRect().top >= (parseFloat(document.documentElement.style.getPropertyValue('--safe-area-inset-top')) || 0)"));
     }
 
-    private void screenshot(String name) throws Exception {
-        File directory = new File(InstrumentationRegistry.getInstrumentation().getTargetContext().getExternalFilesDir(null), "screenshots");
-        assertTrue(directory.isDirectory() || directory.mkdirs());
-        Bitmap bitmap = InstrumentationRegistry.getInstrumentation().getUiAutomation().takeScreenshot();
-        try (FileOutputStream stream = new FileOutputStream(new File(directory, name))) {
-            assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream));
-        } finally { bitmap.recycle(); }
-    }
 }

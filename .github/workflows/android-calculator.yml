@@ -60,7 +60,17 @@ jobs:
             adb shell svc wifi disable
             adb shell svc data disable
             cd mobile/calculator/android && ./gradlew :app:connectedDebugAndroidTest --no-daemon
-            adb pull /sdcard/Android/data/com.zoechan.qalab.calculator/files/screenshots "$GITHUB_WORKSPACE/android-screenshots"
+            mkdir -p "$GITHUB_WORKSPACE/android-screenshots"
+            adb install -r "$GITHUB_WORKSPACE/mobile/calculator/android/app/build/outputs/apk/debug/app-debug.apk"
+            adb shell am start -W -n com.zoechan.qalab.calculator/.MainActivity
+            sleep 3
+            adb shell screencap -p /sdcard/Download/qa-calculator-portrait.png
+            adb pull /sdcard/Download/qa-calculator-portrait.png "$GITHUB_WORKSPACE/android-screenshots/calculator-portrait.png"
+            adb shell settings put system accelerometer_rotation 0
+            adb shell settings put system user_rotation 1
+            sleep 2
+            adb shell screencap -p /sdcard/Download/qa-calculator-landscape.png
+            adb pull /sdcard/Download/qa-calculator-landscape.png "$GITHUB_WORKSPACE/android-screenshots/calculator-landscape.png"
       - name: Verify APK and prepare checksums
         run: |
           mkdir -p apk-release
