@@ -60,6 +60,7 @@ jobs:
             adb shell svc wifi disable
             adb shell svc data disable
             cd mobile/calculator/android && ./gradlew connectedDebugAndroidTest --no-daemon
+            adb pull /sdcard/Android/data/com.zoechan.qalab.calculator/files/screenshots "$GITHUB_WORKSPACE/android-screenshots"
       - name: Verify APK and prepare checksums
         run: |
           mkdir -p apk-release
@@ -77,6 +78,7 @@ jobs:
             apk-release/
             mobile/calculator/android/app/build/reports/androidTests/
             mobile/calculator/android/app/build/outputs/androidTest-results/
+            android-screenshots/
       - name: Publish tested classroom APK
         env:
           GH_TOKEN: ${{ github.token }}

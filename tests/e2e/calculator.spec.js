@@ -32,6 +32,7 @@ test("shared calculator runs all expected cases and is usable inside Mobile", as
   const element = await page.locator("#mobile-calculator").elementHandle();
   const child = await element.contentFrame();
   expect(await child.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: testInfo.outputPath("mobile-calculator.png"), fullPage: true });
 });
 
@@ -70,4 +71,18 @@ test("calculator remains responsive at narrow portrait and landscape widths", as
     await page.locator("#calc-equals").click();
     await expect(page.locator("#calc-result")).toHaveText("20");
   }
+});
+
+test("hardware keyboard still works after tapping keypad and errors do not shift the keys", async ({ page }) => {
+  await page.goto("/calculator/index.html");
+  await page.locator("#calc-key-2").click();
+  await page.keyboard.type("+3*4");
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#calc-result")).toHaveText("14");
+  const before = await page.locator(".main-keys").boundingBox();
+  await page.locator("#calc-expression").fill("sqrt(-1)");
+  await page.locator("#calc-equals").click();
+  await expect(page.locator("#calc-status")).toContainText("DOMAIN");
+  const after = await page.locator(".main-keys").boundingBox();
+  expect(after.y).toBe(before.y);
 });

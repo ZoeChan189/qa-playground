@@ -96,9 +96,10 @@ document.querySelectorAll("[data-action]").forEach((button) => button.addEventLi
 expression.addEventListener("input", () => { completed = false; setStatus("Not calculated"); });
 document.addEventListener("keydown", (event) => {
   if (event.ctrlKey || event.metaKey || event.altKey) return;
-  if (event.key === "Enter" && (event.target === expression || event.target === document.body)) { event.preventDefault(); evaluate(); }
+  const keypadTarget = event.target === document.body || event.target.closest?.(".main-keys, .scientific-keys");
+  if (["Enter", "="].includes(event.key) && (event.target === expression || keypadTarget)) { event.preventDefault(); evaluate(); }
   else if (event.key === "Escape") { event.preventDefault(); action("clear"); }
-  else if (event.target !== expression && event.target === document.body) {
+  else if (event.target !== expression && keypadTarget) {
     if (/^[0-9.+\-*/^()]$/.test(event.key)) { event.preventDefault(); insert(event.key); }
     else if (event.key === "Backspace") { event.preventDefault(); action("delete"); }
     else if (event.key === "%") { event.preventDefault(); action("percent"); }
@@ -125,3 +126,4 @@ byId("calc-run-cases").addEventListener("click", () => {
 new ResizeObserver(resizeParent).observe(document.body);
 setMode(mode);
 renderHistory();
+window.qaCalculatorReady = true;
