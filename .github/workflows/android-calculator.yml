@@ -15,7 +15,7 @@ permissions:
 
 concurrency:
   group: android-calculator
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   android:
@@ -59,7 +59,7 @@ jobs:
           script: |
             adb shell svc wifi disable
             adb shell svc data disable
-            cd mobile/calculator/android && ./gradlew connectedDebugAndroidTest --no-daemon
+            cd mobile/calculator/android && ./gradlew :app:connectedDebugAndroidTest --no-daemon
             adb pull /sdcard/Android/data/com.zoechan.qalab.calculator/files/screenshots "$GITHUB_WORKSPACE/android-screenshots"
       - name: Verify APK and prepare checksums
         run: |
