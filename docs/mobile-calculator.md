@@ -6,6 +6,8 @@ QA Calculator là máy tính đơn giản để nhóm demo mobile testing. Bản
 
 Chức năng: cộng/trừ/nhân/chia, ngoặc, số thập phân, căn bậc hai, bình phương/lũy thừa, phần trăm, sin/cos/tan, log/ln, hằng số pi/e, DEG/RAD, Ans, AC, xóa ký tự và lịch sử tối đa 10 phép tính. Lịch sử và chế độ góc lưu riêng trên thiết bị; không gửi lên server. AC xóa phép tính hiện tại, không xóa lịch sử hoặc Ans. Chọn Clear history để xóa lịch sử.
 
+Trên màn hình nhỏ, các phím khoa học mặc định ẩn để bàn phím cơ bản gọn hơn. Tick **Scientific** để mở sin/cos/tan, căn, lũy thừa và log; bỏ tick không xóa biểu thức đang nhập. Khi thư viện toán đang tải, các nút bị khóa và hiện Loading calculator; đợi đến khi nút được bật rồi tính.
+
 ## Cài trên điện thoại
 
 1. Dùng điện thoại **Android 7.0 trở lên**, mở QA Lab, chọn **Mobile**.
@@ -14,7 +16,7 @@ Chức năng: cộng/trừ/nhân/chia, ngoặc, số thập phân, căn bậc ha
 4. Chọn Install, rồi Open. Tên app là **QA Calculator**.
 5. Bấm `2 + 3 × 4 =`, kết quả phải là **14**. Tắt Wi-Fi/dữ liệu di động và lặp lại; app vẫn phải tính được.
 
-Người chỉ cài APK **không cần** tải source, Node.js, k6, Java hoặc Android Studio. APK này debug-signed cho bài tập, không phải bản phát hành Play Store. Không cần trả tiền hoặc đăng nhập tài khoản.
+Người chỉ cài APK **không cần** tải source, Node.js, k6, Java hoặc Android Studio. Giữ Android System WebView / Chrome được cập nhật, nhất là trên máy Android cũ. Nếu app báo không khởi động được, cập nhật hai thành phần này từ Play Store rồi mở lại app. APK này debug-signed cho bài tập, không phải bản phát hành Play Store. Không cần trả tiền hoặc đăng nhập tài khoản.
 
 Nếu báo không cài được: kiểm tra Android 7+, dung lượng trống và file đã tải đủ; tải lại từ repo chính. Nếu đã cài một bản tự build có chữ ký khác, cần gỡ bản cũ trước khi cài (lịch sử trên bản cũ sẽ mất). Cùng giao diện/engine không có nghĩa web và APK đồng bộ lịch sử: mỗi nơi có dữ liệu riêng. Việc Android cảnh báo nguồn ngoài cửa hàng không tự chứng minh app bị lỗi.
 

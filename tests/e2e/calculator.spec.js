@@ -65,7 +65,7 @@ test("calculator remains responsive at narrow portrait and landscape widths", as
   for (const viewport of [{ width: 320, height: 700 }, { width: 740, height: 360 }]) {
     await page.setViewportSize(viewport);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-    const sizes = await page.locator(".main-keys button, .scientific-keys button").evaluateAll((buttons) => buttons.map((button) => { const box = button.getBoundingClientRect(); return box.width >= 44 && box.height >= 44; }));
+    const sizes = await page.locator(".main-keys button, .scientific-keys button").evaluateAll((buttons) => buttons.filter((button) => button.getClientRects().length).map((button) => { const box = button.getBoundingClientRect(); return box.width >= 44 && box.height >= 44; }));
     expect(sizes.every(Boolean)).toBe(true);
     await page.locator("#calc-expression").fill("(2+3)*4");
     await page.locator("#calc-equals").click();
@@ -85,4 +85,31 @@ test("hardware keyboard still works after tapping keypad and errors do not shift
   await expect(page.locator("#calc-status")).toContainText("DOMAIN");
   const after = await page.locator(".main-keys").boundingBox();
   expect(after.y).toBe(before.y);
+});
+
+test("keypad stays disabled until the math library and event handlers are ready", async ({ page }) => {
+  let release;
+  await page.route("**/calculator/vendor/math.js", async (route) => {
+    await new Promise((resolve) => { release = resolve; });
+    await route.continue();
+  });
+  await page.goto("/calculator/index.html", { waitUntil: "commit" });
+  await expect(page.locator("#calc-key-2")).toBeDisabled();
+  await expect(page.locator("#calc-run-cases")).toBeDisabled();
+  await expect.poll(() => typeof release).toBe("function");
+  release();
+  await expect(page.locator("#calc-run-cases")).toBeEnabled();
+  await page.locator("#calc-run-cases").click();
+  await expect(page.locator("#calc-case-verdict")).toHaveText("PASS - 14 / 14 cases matched");
+});
+
+test("scientific keys can be expanded without losing the calculation", async ({ page }) => {
+  await page.goto("/calculator/index.html");
+  await page.locator("#calc-scientific-toggle").check();
+  await page.getByRole("button", { name: "Square root", exact: true }).click();
+  await page.locator("#calc-key-9").click();
+  await page.getByRole("button", { name: "Close parenthesis", exact: true }).click();
+  await page.locator("#calc-scientific-toggle").uncheck();
+  await page.locator("#calc-equals").click();
+  await expect(page.locator("#calc-result")).toHaveText("3");
 });

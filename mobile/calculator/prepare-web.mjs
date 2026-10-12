@@ -14,6 +14,6 @@ await copyFile(path.join(root, "node_modules/mathjs/lib/browser/math.js"), path.
 await copyFile(path.join(root, "node_modules/mathjs/LICENSE"), path.join(output, "vendor/mathjs-LICENSE.txt"));
 for (const name of ["delete", "eraser", "play"]) await copyFile(path.join(root, `node_modules/lucide-static/icons/${name}.svg`), path.join(output, `icons/${name}.svg`));
 const assets = {};
-for (const name of ["index.html", "app.js", "styles.css", "engine.js", "vendor/math.js"]) assets[name] = createHash("sha256").update(await readFile(path.join(output, name))).digest("hex");
+for (const name of ["index.html", "app.js", "boot.js", "styles.css", "engine.js", "vendor/math.js"]) assets[name] = createHash("sha256").update(await readFile(path.join(output, name))).digest("hex");
 await writeFile(path.join(output, "asset-hashes.json"), JSON.stringify(assets, null, 2));
 console.log("Prepared offline assets from the same calculator files served by QA Lab.");

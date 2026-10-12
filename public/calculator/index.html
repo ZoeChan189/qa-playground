@@ -6,17 +6,20 @@
     <meta name="theme-color" content="#087e83" />
     <title>QA Calculator</title>
     <link rel="stylesheet" href="./styles.css" />
+    <script src="./boot.js" defer></script>
     <script src="./vendor/math.js" defer></script>
     <script type="module" src="./app.js"></script>
   </head>
   <body>
     <header class="app-header"><strong>QA Calculator</strong><span id="calc-platform">Web</span></header>
     <main>
+      <fieldset id="calc-controls" disabled>
       <div class="calculator-layout">
         <section class="calculator" aria-label="Scientific calculator">
           <div class="mode-row"><div class="angle-mode" role="group" aria-label="Angle mode"><button id="calc-deg" type="button" aria-pressed="true">DEG</button><button id="calc-rad" type="button" aria-pressed="false">RAD</button></div><span id="calc-answer-indicator">Ans: 0</span></div>
-          <div class="display"><label for="calc-expression">Expression</label><input id="calc-expression" type="text" autocomplete="off" spellcheck="false" maxlength="256" inputmode="decimal" aria-label="Calculation expression" /><output id="calc-result" aria-live="polite">0</output><p id="calc-status" role="status">Ready</p></div>
-          <div class="scientific-keys" aria-label="Scientific operations">
+          <div class="display"><label for="calc-expression">Expression</label><input id="calc-expression" type="text" autocomplete="off" spellcheck="false" maxlength="256" inputmode="decimal" aria-label="Calculation expression" /><output id="calc-result" aria-live="polite">0</output><p id="calc-status" role="status">Loading calculator</p></div>
+          <label class="scientific-toggle"><input id="calc-scientific-toggle" type="checkbox" />Scientific</label>
+          <div id="calc-scientific-keys" class="scientific-keys" aria-label="Scientific operations" hidden>
             <button type="button" data-insert="sin(" aria-label="Sine">sin</button><button type="button" data-insert="cos(" aria-label="Cosine">cos</button><button type="button" data-insert="tan(" aria-label="Tangent">tan</button><button type="button" data-insert="pi" aria-label="Pi">&pi;</button><button type="button" data-insert="e" aria-label="Euler constant">e</button>
             <button type="button" data-insert="sqrt(" aria-label="Square root">&radic;</button><button type="button" data-action="square" aria-label="Square">x&sup2;</button><button type="button" data-insert="^" aria-label="Power">x&#696;</button><button type="button" data-insert="log(" aria-label="Base ten logarithm">log</button><button type="button" data-insert="ln(" aria-label="Natural logarithm">ln</button>
           </div>
@@ -32,6 +35,7 @@
         <section class="history-section" aria-labelledby="history-title"><div class="section-heading"><h2 id="history-title">History</h2><button id="calc-clear-history" class="icon-button" type="button" aria-label="Clear calculation history" title="Clear history"><img src="./icons/eraser.svg" alt="" /></button></div><p id="calc-history-empty">No calculations yet</p><ol id="calc-history"></ol></section>
       </div>
       <section class="test-section" aria-labelledby="cases-title"><div class="section-heading"><h2 id="cases-title">Calculator test cases</h2><button id="calc-run-cases" class="test-button" type="button"><img src="./icons/play.svg" alt="" />Run key cases</button></div><p id="calc-case-verdict" role="status">NOT RUN</p><div class="test-table-wrap" hidden><table><thead><tr><th>Case / input</th><th>Expected</th><th>Actual</th><th>Result</th></tr></thead><tbody id="calc-case-rows"></tbody></table></div></section>
+      </fieldset>
     </main>
   </body>
 </html>

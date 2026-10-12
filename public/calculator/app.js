@@ -8,6 +8,10 @@ const native = window.Capacitor?.getPlatform?.() === "android";
 byId("calc-platform").textContent = native ? "Android" : "Web";
 if (new URLSearchParams(location.search).get("embedded") === "1") document.body.classList.add("embedded");
 const engine = createCalculatorEngine(window.math);
+const scientific = byId("calc-scientific-toggle");
+scientific.checked = window.innerWidth > 600;
+byId("calc-scientific-keys").hidden = !scientific.checked;
+scientific.addEventListener("change", () => { byId("calc-scientific-keys").hidden = !scientific.checked; resizeParent(); });
 const storageKey = "qa-calculator-v1";
 let mode = "DEG";
 let answer = "0";
@@ -126,4 +130,5 @@ byId("calc-run-cases").addEventListener("click", () => {
 new ResizeObserver(resizeParent).observe(document.body);
 setMode(mode);
 renderHistory();
+byId("calc-controls").disabled = false;
 window.qaCalculatorReady = true;
