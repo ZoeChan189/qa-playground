@@ -86,6 +86,7 @@ public class CalculatorTest {
     @Test public void keypadTargetsFitTheInstalledAndroidViewport() throws Exception {
         assertEquals("false", script("document.documentElement.scrollWidth>document.documentElement.clientWidth"));
         assertEquals("true", script("Array.from(document.querySelectorAll('.main-keys button,.scientific-keys button')).every(button=>{const box=button.getBoundingClientRect();return box.width>=44&&box.height>=44})"));
+        assertEquals("true", script("document.querySelector('.app-header').getBoundingClientRect().top >= (parseFloat(document.documentElement.style.getPropertyValue('--safe-area-inset-top')) || 0)"));
     }
 
     private void screenshot(String name) throws Exception {
