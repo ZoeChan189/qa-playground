@@ -11,6 +11,7 @@ import { perfScenarios } from "./domain/perf-scenarios.js";
 import { aiTopics, generateAiCases, listGeminiModels, validGeminiModel } from "./domain/ai-assistant.js";
 import { createLocalPerfRunner } from "./domain/local-perf-runner.js";
 import { scenarioWithPeak, soakSteadySeconds } from "../public/shared/perf-profile.js";
+import { createChatGptAssistant, chatGptFailure } from "./domain/chatgpt-assistant.js";
 
 const deriveKey = promisify(pbkdf2);
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
@@ -59,7 +60,7 @@ function createTelemetry() {
   };
 }
 
-export function createApp({ aiFetch = fetch, perfRunner = createLocalPerfRunner(), bridgeCode = "", bridgeOrigin = "", bridgeSession = null } = {}) {
+export function createApp({ aiFetch = fetch, perfRunner = createLocalPerfRunner(), bridgeCode = "", bridgeOrigin = "", bridgeSession = null, chatGptAssistant = createChatGptAssistant() } = {}) {
   const app = express();
   const telemetry = createTelemetry();
   const plans = new Map();
@@ -166,6 +167,10 @@ export function createApp({ aiFetch = fetch, perfRunner = createLocalPerfRunner(
     });
   }
 
+  app.use("/local-bridge", (_request, response) => response.status(404).json({
+    error: "connector_unavailable", message: "This local connector route is unavailable. Update QA Lab and run setup-windows.cmd, then restart the local server.",
+  }));
+
   async function perfWork(request, response, next) {
     const rawWork = String(request.query.work ?? "30");
     if (!/^\d{1,3}$/.test(rawWork) || Number(rawWork) < 1 || Number(rawWork) > 100) {
@@ -251,6 +256,36 @@ export function createApp({ aiFetch = fetch, perfRunner = createLocalPerfRunner(
       personalKeySupported: true,
     });
   });
+
+  let chatGptOperation = false;
+  app.use("/api/ai/chatgpt", (request, response, next) => {
+    const host = request.get("host") || "";
+    const origin = request.get("origin");
+    if (process.env.NODE_ENV === "production" || !/^(localhost|127\.0\.0\.1):\d+$/.test(host)
+      || !/^(127\.0\.0\.1|::1|::ffff:127\.0\.0\.1)$/.test(request.socket.remoteAddress || "")
+      || (origin && origin !== `http://${host}`) || (request.method !== "GET" && origin !== `http://${host}`)
+      || request.get("sec-fetch-site") === "cross-site") {
+      return response.status(403).json({ error: "chatgpt_local_only", message: "ChatGPT sign-in is available only in local QA Lab. Open http://127.0.0.1:4173/#ai on your computer." });
+    }
+    next();
+  });
+  const chatGptAction = (method) => async (request, response) => {
+    if (method !== "status" && chatGptOperation) return response.status(409).json({ error: "chatgpt_busy", message: "Another ChatGPT operation is still running." });
+    if (method !== "status") chatGptOperation = true;
+    try {
+      const argument = method === "startSignIn" ? request.body?.accountId || "" : request.body;
+      response.json(await chatGptAssistant[method](argument));
+    } catch (error) {
+      const result = chatGptFailure(error);
+      response.status(result.status).json(result.body);
+    } finally { if (method !== "status") chatGptOperation = false; }
+  };
+  app.get("/api/ai/chatgpt/status", chatGptAction("status"));
+  app.post("/api/ai/chatgpt/sign-in", chatGptAction("startSignIn"));
+  app.post("/api/ai/chatgpt/models", chatGptAction("models"));
+  app.post("/api/ai/chatgpt/generate", chatGptAction("generate"));
+  app.post("/api/ai/chatgpt/sign-out", chatGptAction("signOut"));
+  app.post("/api/ai/chatgpt/confirm-plan", chatGptAction("confirmPlan"));
 
   function aiCredentials(body) {
     if (body?.mode === "personal") {

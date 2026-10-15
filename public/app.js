@@ -2,6 +2,7 @@ import { evaluateThresholds } from "./shared/evaluation.js";
 import { validatePlan } from "./shared/plan-rules.js";
 import { MAX_LOCAL_PEAK_VUS, scenarioWithPeak } from "./shared/perf-profile.js";
 import { comparePixels, metricValue, perfDecision } from "./shared/test-evidence.js";
+import { readJson } from "./shared/http-json.js";
 
 const byId = (id) => document.getElementById(id);
 const topicNames = { performance: "Performance", unit: "Unit", api: "API", e2e: "Web E2E", mobile: "Mobile", visual: "Visual", ai: "AI-assisted", ci: "CI/CD" };
@@ -46,6 +47,7 @@ let latestAutoStatus = null;
 let manualSummary = false;
 let autoIdAtImport = null;
 let autoStatusAtImport = null;
+let manualImportedAt = 0;
 let latestPollPending = false;
 const localPage = ["localhost", "127.0.0.1"].includes(location.hostname);
 const bridgeBase = "http://127.0.0.1:4173/local-bridge";
@@ -62,6 +64,9 @@ let e2eResult = null;
 let telemetryPending = false;
 let aiBusy = false;
 let aiModelsPending = false;
+let chatGptStatus = null;
+let chatGptPending = false;
+let chatGptPollPending = false;
 let ciPending = false;
 const recentPerfRuns = [];
 let currentPerfCopy = "";
@@ -530,7 +535,7 @@ function renderRecentRuns() {
 async function connectedScenarios(code) {
   const response = await fetch(`${bridgeBase}/scenarios`, { cache: "no-store", headers: { "X-QA-Bridge-Code": code }, signal: AbortSignal.timeout(8000) });
   if (!response.ok) throw new Error("Update your local QA Lab from GitHub, run setup-windows.cmd and restart it; the connector's scenario data is unavailable");
-  const data = await response.json();
+  const data = await readJson(response, "Local connector");
   if (!["load", "stress", "spike", "soak"].every((name) => Array.isArray(data.scenarios?.[name]?.stages))) throw new Error("Invalid local scenario data. Update and restart the local QA Lab.");
   return data.scenarios;
 }
@@ -561,6 +566,7 @@ function showRunState(title, detail, failed = false) {
 async function importSummary(file) {
   if (!file) return;
   manualSummary = true;
+  manualImportedAt = Date.now();
   autoIdAtImport = latestAutoId;
   autoStatusAtImport = latestAutoStatus;
   clearSummary();
@@ -587,7 +593,8 @@ async function pollLatestRun() {
       signal: AbortSignal.timeout(10_000),
     });
     if (!response.ok) throw new Error("Local run status unavailable.");
-    const data = await response.json();
+    const data = await readJson(response, bridgeConnected ? "Local connector" : "QA Lab");
+    if (typeof data.canRun !== "boolean") throw new Error("Invalid runner status. Update and restart local QA Lab.");
     if (source !== bridgeCode) return;
     localK6Ready = data.canRun;
     runActive = data.run?.status === "running";
@@ -607,6 +614,11 @@ async function pollLatestRun() {
         showRunState("No result on this runner", "The local server restarted or has no completed run. Run k6 again; earlier tab results remain in Recent runs.");
       }
       return;
+    }
+    if (manualSummary && autoIdAtImport === null) {
+      // The initial status request can finish after a user has imported a file.
+      if (run.source !== "saved" && run.status === "complete" && Date.parse(run.finishedAt) >= manualImportedAt) manualSummary = false;
+      else { autoIdAtImport = run.id; autoStatusAtImport = run.status; return; }
     }
     if (manualSummary && run.id === autoIdAtImport && run.status === autoStatusAtImport) return;
     if (manualSummary) manualSummary = false;
@@ -639,11 +651,11 @@ async function pollLatestRun() {
       byId("perf-outcome-detail").textContent = run.message || "No valid summary was produced.";
       showRunState("k6 run failed", run.message || "No valid summary was produced. Check k6 installation and try again.", true);
     }
-  } catch {
+  } catch (error) {
     if (source !== bridgeCode) return;
     localK6Ready = false;
     byId("run-k6").disabled = true;
-    byId("run-availability").textContent = "Local runner offline. Reconnect k6; the result below is from the last completed run.";
+    byId("run-availability").textContent = `Local runner unavailable: ${error.message}. Reconnect k6; any result below is from the last completed run.`;
     byId("k6-install").hidden = true;
   } finally {
     latestPollPending = false;
@@ -672,13 +684,14 @@ async function startK6Run() {
       body: JSON.stringify({ scenario: selectedScenario, peakVus }),
       signal: AbortSignal.timeout(10_000),
     });
-    const result = await response.json();
+    const result = await readJson(response, bridgeConnected ? "Local connector" : "QA Lab");
     if (!response.ok) throw new Error(result.message || "Could not start k6.");
     manualSummary = false;
     latestAutoId = null;
     latestAutoStatus = null;
   } catch (error) {
     manualSummary = true;
+    manualImportedAt = Date.now();
     autoIdAtImport = latestAutoId;
     autoStatusAtImport = latestAutoStatus;
     showRunState("Could not start k6", error.message, true);
@@ -701,8 +714,9 @@ async function connectLocalK6() {
   byId("bridge-status").textContent = "Connecting to this computer...";
   try {
     const response = await fetch(`${bridgeBase}/status`, { cache: "no-store", headers: { "X-QA-Bridge-Code": entered }, signal: AbortSignal.timeout(8000) });
-    const result = await response.json();
+    const result = await readJson(response, "Local connector");
     if (!response.ok) throw new Error(result.message || "Connection rejected. Check the code and allowed site origin.");
+    if (typeof result.canRun !== "boolean") throw new Error("Invalid connector status. Update and restart local QA Lab.");
     useConnectedScenarios(await connectedScenarios(entered), entered);
     byId("bridge-code").value = "";
     byId("bridge-status").textContent = result.canRun ? "Connected. k6, live counters and probe use this computer." : "Connected, but k6 is missing. Install it and restart QA Lab.";
@@ -736,7 +750,8 @@ async function autoConnectK6() {
         response = await fetch(`${bridgeBase}/status`, { cache: "no-store", headers: { "X-QA-Bridge-Code": token }, signal: AbortSignal.timeout(2000) });
       } catch { /* The protocol handler or browser permission prompt may still be pending. */ }
       if (response?.ok) {
-        const data = await response.json();
+        const data = await readJson(response, "Local connector");
+        if (typeof data.canRun !== "boolean") throw new Error("Invalid connector status. Update and restart local QA Lab.");
         useConnectedScenarios(await connectedScenarios(token), token);
         byId("bridge-status").textContent = data.canRun ? "Connected. k6 and the test API run on this computer. Results appear on this page." : "QA Lab connected, but k6 is missing. Run setup-windows.cmd, then reconnect.";
         await pollLatestRun();
@@ -1047,11 +1062,22 @@ async function loadAiStatus() {
 function updateAiMode() {
   byId("ai-mode-group").classList.toggle("selected", aiMode === "group");
   byId("ai-mode-personal").classList.toggle("selected", aiMode === "personal");
+  byId("ai-mode-chatgpt").classList.toggle("selected", aiMode === "chatgpt");
+  byId("chatgpt-panel").hidden = aiMode !== "chatgpt";
+  byId("chatgpt-local-controls").hidden = !localPage;
+  byId("chatgpt-open-local").hidden = localPage;
+  byId("gemini-model-row").hidden = aiMode === "chatgpt";
+  byId("chatgpt-plan-badge").hidden = !chatGptStatus?.planEnabled;
+  byId("chatgpt-active-account").hidden = !chatGptStatus?.signedIn;
+  byId("chatgpt-active-account").textContent = `Active account: ${chatGptStatus?.accounts?.find((item) => item.id === chatGptStatus.activeId)?.label || "None"}`;
   byId("ai-access-wrap").hidden = aiMode !== "group" || !aiRequiresCode;
   byId("ai-personal-wrap").hidden = aiMode !== "personal";
-  const busy = aiBusy || aiModelsPending;
-  byId("ai-generate").disabled = busy || (aiMode === "group" ? !aiReady : !byId("ai-personal-key").value.trim());
-  for (const id of ["ai-mode-group", "ai-mode-personal", "ai-personal-key", "ai-access-code", "ai-topic", "ai-requirement", "ai-model", "ai-load-models"]) byId(id).disabled = busy;
+  const busy = aiBusy || aiModelsPending || chatGptPending;
+  byId("ai-generate").disabled = busy || (aiMode === "chatgpt" ? !localPage || !chatGptStatus?.planEnabled || !byId("chatgpt-model").value || chatGptStatus.pending : aiMode === "group" ? !aiReady : !byId("ai-personal-key").value.trim());
+  for (const id of ["ai-mode-group", "ai-mode-personal", "ai-mode-chatgpt", "ai-personal-key", "ai-access-code", "ai-topic", "ai-requirement", "ai-model", "ai-load-models", "chatgpt-account", "chatgpt-model"]) byId(id).disabled = busy;
+  byId("chatgpt-sign-in").disabled = busy || !localPage || chatGptStatus?.pending;
+  byId("chatgpt-sign-out").disabled = busy || !localPage || (!chatGptStatus?.signedIn && !chatGptStatus?.pending);
+  byId("chatgpt-load-models").disabled = busy || !localPage || !chatGptStatus?.planEnabled || chatGptStatus.pending;
   byId("view-ai").querySelectorAll(".checklist input").forEach((box) => { box.disabled = busy || !aiDraftReady; });
 }
 
@@ -1065,7 +1091,87 @@ function invalidateAiDraft() {
 
 function aiErrorText(data) {
   const detail = data?.diagnostic;
-  return [data?.message || "AI request failed.", detail?.providerStatus ? `Gemini HTTP ${detail.providerStatus}.` : "", detail?.providerCode, detail?.reason, detail?.source ? `Source: ${detail.source}.` : "", detail?.action].filter(Boolean).join(" ");
+  return [data?.message || "AI request failed.", detail?.providerStatus ? `Provider HTTP ${detail.providerStatus}.` : "", detail?.providerCode, detail?.reason, detail?.source ? `Source: ${detail.source}.` : "", detail?.action].filter(Boolean).join(" ");
+}
+
+async function chatGptRequest(action, body) {
+  const response = await fetch(`/api/ai/chatgpt/${action}`, { cache: "no-store", ...(body !== undefined ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(action === "generate" ? 75_000 : 30_000) });
+  const data = await readJson(response, "ChatGPT local service");
+  if (!response.ok) throw new Error(aiErrorText(data));
+  return data;
+}
+
+async function pollChatGptStatus() {
+  if (!localPage || chatGptPollPending) return;
+  chatGptPollPending = true;
+  try {
+    const data = await chatGptRequest("status");
+    const changed = chatGptStatus?.activeId !== data.activeId || chatGptStatus?.signedIn !== data.signedIn;
+    const selected = byId("chatgpt-account").value;
+    if (JSON.stringify(chatGptStatus?.accounts) !== JSON.stringify(data.accounts)) {
+      byId("chatgpt-account").replaceChildren(new Option("New account", ""), ...data.accounts.map((item) => new Option(item.label, item.id)));
+      byId("chatgpt-account").value = changed ? data.activeId || "" : selected;
+    }
+    if (changed) {
+      byId("chatgpt-model").replaceChildren(new Option("Load account models first", ""));
+      if (aiMode === "chatgpt") invalidateAiDraft();
+    }
+    const statusChanged = JSON.stringify(chatGptStatus) !== JSON.stringify(data);
+    chatGptStatus = data;
+    if (data.welcomeRequired && aiMode === "chatgpt" && !byId("chatgpt-welcome").open) byId("chatgpt-welcome").showModal();
+    if (!data.pending) { byId("chatgpt-auth-link").hidden = true; byId("chatgpt-auth-link").removeAttribute("href"); }
+    if (statusChanged) byId("chatgpt-status").textContent = data.lastError ? aiErrorText(data.lastError) : data.pending ? "Waiting for OpenAI sign-in. Complete authorization in the new tab, then return here."
+      : data.signedIn ? data.planEnabled ? "Signed in. ChatGPT plan use is enabled. Load account models before generating." : "Signed in, but ChatGPT plan use was not granted. Sign in again to enable access or choose Gemini API."
+        : "Not signed in. Choose New account or a saved account, then Continue with ChatGPT. Eligibility and usage limits apply.";
+  } catch (error) {
+    chatGptStatus = null;
+    byId("chatgpt-status").textContent = error.message;
+  } finally { chatGptPollPending = false; updateAiMode(); }
+}
+
+async function signInChatGpt() {
+  if (chatGptPending || !localPage) return;
+  const popup = window.open("about:blank", "_blank");
+  if (popup) popup.opener = null;
+  chatGptPending = true;
+  updateAiMode();
+  try {
+    const data = await chatGptRequest("sign-in", { accountId: byId("chatgpt-account").value });
+    const url = new URL(data.url);
+    if (url.origin !== "https://auth.openai.com" || url.pathname !== "/api/accounts/authorize") throw new Error("Invalid OpenAI sign-in destination.");
+    byId("chatgpt-auth-link").href = url.href;
+    byId("chatgpt-auth-link").hidden = false;
+    if (popup) popup.location.href = url.href;
+    await pollChatGptStatus();
+  } catch (error) { popup?.close(); byId("chatgpt-status").textContent = error.message; }
+  finally { chatGptPending = false; updateAiMode(); }
+}
+
+async function signOutChatGpt() {
+  if (chatGptPending) return;
+  chatGptPending = true;
+  updateAiMode();
+  try {
+    const result = await chatGptRequest("sign-out", {});
+    await pollChatGptStatus();
+    byId("chatgpt-status").textContent = result.message;
+    toast(result.message, !result.revoked);
+  } catch (error) { byId("chatgpt-status").textContent = error.message; }
+  finally { chatGptPending = false; updateAiMode(); }
+}
+
+async function loadChatGptModels() {
+  if (aiBusy || aiModelsPending) return;
+  aiModelsPending = true;
+  updateAiMode();
+  try {
+    const data = await chatGptRequest("models", {});
+    if (!Array.isArray(data.models) || !data.models.length) throw new Error("No available ChatGPT models. Check account eligibility and plan access.");
+    invalidateAiDraft();
+    byId("chatgpt-model").replaceChildren(...data.models.map((item) => new Option(item.label, item.id)));
+    byId("chatgpt-status").textContent = `${data.models.length} account models loaded. Choose a model, then Generate test cases.`;
+  } catch (error) { byId("chatgpt-status").textContent = error.message; }
+  finally { aiModelsPending = false; updateAiMode(); }
 }
 
 function aiCredentials() {
@@ -1089,7 +1195,7 @@ async function loadAiModels() {
   byId("ai-status").textContent = "Loading available Gemini models...";
   try {
     const response = await fetch("/api/ai/models", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(aiCredentials()), signal: AbortSignal.timeout(20_000) });
-    const data = await response.json();
+    const data = await readJson(response, "Gemini service");
     if (!response.ok) throw new Error(aiErrorText(data));
     if (!data.models.length) throw new Error("No text generation models were returned for this key.");
     const previous = byId("ai-model").value;
@@ -1111,7 +1217,8 @@ async function loadAiModels() {
 }
 
 async function generateAiCases() {
-  if (aiBusy || aiModelsPending) return;
+  if (aiBusy || aiModelsPending || chatGptPending) return;
+  if (aiMode === "chatgpt" && (!localPage || !chatGptStatus?.planEnabled || !byId("chatgpt-model").value)) return;
   if ((aiMode === "group" && !aiReady) || !buildAiPrompt()) return;
   const accessCode = byId("ai-access-code").value;
   if (aiMode === "group" && aiRequiresCode && !accessCode) {
@@ -1129,19 +1236,19 @@ async function generateAiCases() {
   aiDraftReady = false;
   aiRequestEvidence = null;
   byId("view-ai").querySelectorAll(".checklist input").forEach((box) => { box.checked = false; });
-  showAiEvidence([], "RUNNING · Waiting for the current Gemini request.");
+  showAiEvidence([], "RUNNING · Waiting for the current AI request.");
   try {
-    const response = await fetch("/api/ai/generate", {
+    const response = await fetch(aiMode === "chatgpt" ? "/api/ai/chatgpt/generate" : "/api/ai/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ topic: byId("ai-topic").value, requirement: byId("ai-requirement").value.trim(), model: byId("ai-model").value, ...aiCredentials() }),
-      signal: AbortSignal.timeout(40_000),
+      body: JSON.stringify({ topic: byId("ai-topic").value, requirement: byId("ai-requirement").value.trim(), model: byId(aiMode === "chatgpt" ? "chatgpt-model" : "ai-model").value, ...(aiMode === "chatgpt" ? {} : aiCredentials()) }),
+      signal: AbortSignal.timeout(aiMode === "chatgpt" ? 75_000 : 40_000),
     });
-    const result = await response.json();
+    const result = await readJson(response, "AI service");
     const matched = typeof result.text === "string" && result.text.trim().length > 0 && typeof result.model === "string";
     aiRequestEvidence = { status: response.status, model: result.model || "Not returned", elapsed: Math.round(performance.now() - started), matched, diagnostic: result.diagnostic, error: result.error, warning: result.warning };
     if (!response.ok) throw new Error(aiErrorText(result));
-    if (!matched) throw new Error("Gemini returned no usable text or model ID.");
+    if (!matched) throw new Error("AI returned no usable text or model ID.");
     byId("ai-result").textContent = result.text;
     byId("ai-result-wrap").hidden = false;
     aiDraftReady = true;
@@ -1151,7 +1258,7 @@ async function generateAiCases() {
     aiDraftReady = false;
     if (!aiRequestEvidence) aiRequestEvidence = { status: "No response", elapsed: Math.round(performance.now() - started), matched: false, model: "Unknown" };
     updateAiEvidence();
-    byId("ai-status").textContent = error.message || "Gemini request failed.";
+    byId("ai-status").textContent = error.message || "AI request failed.";
     toast(byId("ai-status").textContent, true);
   } finally {
     aiBusy = false;
@@ -1165,13 +1272,13 @@ function updateAiEvidence() {
   const reviewed = checks.filter((box) => box.checked).length;
   const done = aiDraftReady && reviewed === checks.length;
   const request = aiRequestEvidence;
-  showAiEvidence([["Draft generated", aiDraftReady ? "Yes" : "No"], ["Review checks", `${reviewed} / ${checks.length}`], ["Model used", request?.model || "Not called"]], done ? "REVIEW COMPLETE · Checklist is self-reported. Generated tests remain NOT VERIFIED here." : request && !aiDraftReady ? "FAIL · The latest Gemini request did not produce a usable draft." : "NOT VERIFIED · AI output needs human review and a real test run.", request && !aiDraftReady ? "fail" : "", [
+  showAiEvidence([["Draft generated", aiDraftReady ? "Yes" : "No"], ["Review checks", `${reviewed} / ${checks.length}`], ["Model used", request?.model || "Not called"]], done ? "REVIEW COMPLETE · Checklist is self-reported. Generated tests remain NOT VERIFIED here." : request && !aiDraftReady ? "FAIL · The latest AI request did not produce a usable draft." : "NOT VERIFIED · AI output needs human review and a real test run.", request && !aiDraftReady ? "fail" : "", [
     ["Generation HTTP status", "200", String(request?.status || "Not called"), request ? request.status === 200 ? "PASS" : "FAIL" : "NOT RUN"],
     ["Draft response contract", "Nonempty text and model ID", request?.matched ? "Matched" : "No valid draft", request ? request.matched ? "PASS" : "FAIL" : "NOT RUN"],
     ["Generation duration", "No configured limit", request ? `${request.elapsed} ms` : "Not called", "INFO"],
     ...(request?.diagnostic ? [
       ["Failure source", "Distinguish QA Lab, provider and connection errors", request.diagnostic.source || "Unknown", "INFO"],
-      ["Gemini HTTP status", "200 with usable text", String(request.diagnostic.providerStatus ?? "No provider response"), "INFO"],
+      ["Provider HTTP status", "200 with usable text", String(request.diagnostic.providerStatus ?? "No provider response"), "INFO"],
       ["Provider code / key restriction", "No error", [request.error, request.diagnostic.providerCode, request.diagnostic.reason].filter(Boolean).join(" / "), "INFO"],
       ["Suggested action", "Resolve the identified layer", request.diagnostic.action || "Check connection and configuration", "INFO"],
     ] : []),
@@ -1254,6 +1361,17 @@ byId("ai-generate").addEventListener("click", generateAiCases);
 byId("ai-copy-result").addEventListener("click", () => copyText(byId("ai-result").textContent));
 byId("ai-mode-group").addEventListener("click", () => { aiMode = "group"; invalidateAiDraft(); updateAiMode(); });
 byId("ai-mode-personal").addEventListener("click", () => { aiMode = "personal"; invalidateAiDraft(); updateAiMode(); });
+byId("ai-mode-chatgpt").addEventListener("click", () => { aiMode = "chatgpt"; invalidateAiDraft(); updateAiMode(); pollChatGptStatus(); });
+byId("chatgpt-sign-in").addEventListener("click", signInChatGpt);
+byId("chatgpt-sign-out").addEventListener("click", signOutChatGpt);
+byId("chatgpt-load-models").addEventListener("click", loadChatGptModels);
+byId("chatgpt-confirm-plan").addEventListener("click", async () => {
+  byId("chatgpt-confirm-plan").disabled = true;
+  try { await chatGptRequest("confirm-plan", {}); byId("chatgpt-welcome").close(); await pollChatGptStatus(); }
+  catch (error) { toast(error.message, true); }
+  finally { byId("chatgpt-confirm-plan").disabled = false; }
+});
+byId("chatgpt-model").addEventListener("change", () => { invalidateAiDraft(); updateAiMode(); });
 byId("ai-personal-key").addEventListener("input", updateAiMode);
 byId("ai-load-models").addEventListener("click", loadAiModels);
 for (const id of ["ai-topic", "ai-requirement", "ai-model", "ai-personal-key", "ai-access-code"]) byId(id).addEventListener("input", invalidateAiDraft);
@@ -1294,4 +1412,5 @@ try {
   syncRoute();
 }
 setInterval(() => { if (!document.hidden) { checkHealth(); pollTelemetry(); pollLatestRun(); } }, 2000);
+setInterval(() => { if (!document.hidden && aiMode === "chatgpt" && localPage && !chatGptPending && !aiBusy && !aiModelsPending) pollChatGptStatus(); }, 3000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) { pollTelemetry(); pollLatestRun(); } });

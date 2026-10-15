@@ -24,7 +24,7 @@
           <button class="topic-link" type="button" data-view="ai"><img src="/icons/sparkles.svg" alt="" />AI-assisted</button>
           <button class="topic-link" type="button" data-view="ci"><img src="/icons/git-branch.svg" alt="" />CI/CD</button>
         </nav>
-        <div class="sidebar-bottom"><span class="local-dot"></span> Local-first load testing<a href="https://github.com/ZoeChan189/qa-playground" target="_blank" rel="noopener noreferrer">GitHub repository <img src="/icons/external-link.svg" alt="" /></a><p id="release-version">Version 1.2.0</p></div>
+        <div class="sidebar-bottom"><span class="local-dot"></span> Local-first load testing<a href="https://github.com/ZoeChan189/qa-playground" target="_blank" rel="noopener noreferrer">GitHub repository <img src="/icons/external-link.svg" alt="" /></a><p id="release-version">Version 1.3.0</p></div>
       </aside>
 
       <div class="main-shell">
@@ -89,17 +89,29 @@
           <section id="view-visual" class="view" aria-labelledby="visual-title"><div class="page-heading"><div><p class="eyebrow">SCREENSHOT DIFF</p><h1 id="visual-title">Visual regression</h1><p class="subline">Compare a stable specimen to its checked-in Playwright baseline.</p></div><code class="source-tag">npm run test:visual</code></div><div class="segmented visual-toggle" role="group" aria-label="Specimen variant"><button type="button" data-visual="baseline" class="selected">Baseline</button><button type="button" data-visual="shifted">Shifted variant</button></div><div id="visual-specimen" class="visual-specimen"><div class="specimen-heading"><div><span>RELEASE MONITOR</span><h2>Checkout service</h2></div><span class="specimen-state">Healthy</span></div><div class="specimen-metrics"><div><span>p95 latency</span><strong>184 ms</strong></div><div><span>Error rate</span><strong>0.3%</strong></div><div><span>Availability</span><strong>99.9%</strong></div></div><div class="specimen-row"><span>API gateway</span><b>Operational</b></div><div class="specimen-row"><span>Order service</span><b>Operational</b></div><div class="specimen-row"><span>Payment service</span><b>Operational</b></div></div><div class="section-bar spaced"><h2>Key cases</h2></div><div class="table-wrap"><table class="case-table"><thead><tr><th>Case</th><th>Variant</th><th>Expected</th></tr></thead><tbody><tr><td>V01 · baseline</td><td>Default specimen</td><td>Screenshot matches</td></tr><tr><td>V02 · regression</td><td>Shifted variant</td><td>Screenshot diff detects change</td></tr></tbody></table></div></section>
 
           <section id="view-ai" class="view" aria-labelledby="ai-title">
-            <div class="page-heading"><div><p class="eyebrow">HUMAN-REVIEWED</p><h1 id="ai-title">AI-assisted testing</h1><p class="subline">Generate test ideas with Gemini, then verify and run them yourself.</p></div><span class="source-tag">Gemini via server</span></div>
+            <div class="page-heading"><div><p class="eyebrow">HUMAN-REVIEWED</p><h1 id="ai-title">AI-assisted testing</h1><p class="subline">Generate test ideas, then verify and run them yourself.</p></div><span class="source-tag">Gemini / local ChatGPT</span></div>
             <div class="form-surface">
               <label>Target topic<select id="ai-topic"><option value="performance">Performance</option><option value="api">API</option><option value="e2e">Web E2E</option><option value="unit">Unit</option><option value="mobile">Mobile calculator</option></select></label>
               <label>Requirement<textarea id="ai-requirement" rows="4" maxlength="500">The system should remain responsive as concurrent users increase, and recover after a sudden traffic spike.</textarea></label>
-              <div class="segmented ai-mode" role="group" aria-label="Gemini connection"><button id="ai-mode-group" type="button" class="selected">Group API</button><button id="ai-mode-personal" type="button">My API key</button></div>
+              <div class="segmented ai-mode" role="group" aria-label="AI connection"><button id="ai-mode-group" type="button" class="selected">Group API</button><button id="ai-mode-personal" type="button">My API key</button><button id="ai-mode-chatgpt" type="button">ChatGPT sign-in</button></div>
+              <div id="chatgpt-panel" hidden>
+                <div id="chatgpt-local-controls">
+                  <label>Account to sign in<select id="chatgpt-account"><option value="">New account</option></select></label>
+                  <div class="button-row"><button id="chatgpt-sign-in" type="button" class="button secondary"><img src="/icons/log-in.svg" alt="" />Continue with ChatGPT</button><button id="chatgpt-sign-out" type="button" class="button secondary" disabled><img src="/icons/log-out.svg" alt="" />Sign out</button><a href="https://chatgpt.com/settings/usage" target="_blank" rel="noopener noreferrer" class="button secondary">Usage <img src="/icons/external-link.svg" alt="" /></a></div>
+                  <a id="chatgpt-auth-link" target="_blank" rel="noopener noreferrer" hidden>Open OpenAI sign-in</a>
+                  <div class="ai-model-row"><label>ChatGPT model<select id="chatgpt-model"><option value="">Load account models first</option></select></label><button id="chatgpt-load-models" type="button" class="button secondary" disabled>Load models</button></div>
+                  <p id="chatgpt-plan-badge" class="fine-print" hidden>Using ChatGPT plan. <a href="https://chatgpt.com/settings/usage" target="_blank" rel="noopener noreferrer">Manage usage</a></p>
+                  <p id="chatgpt-active-account" class="fine-print" hidden></p>
+                </div>
+                <a id="chatgpt-open-local" class="button secondary" href="http://127.0.0.1:4173/#ai" target="_blank" rel="noopener noreferrer" hidden>Open local QA Lab <img src="/icons/external-link.svg" alt="" /></a>
+                <p id="chatgpt-status" class="inline-message" role="status">Open local QA Lab to sign in. ChatGPT account eligibility and plan limits apply.</p>
+              </div>
               <label id="ai-access-wrap" hidden>Group access code<input id="ai-access-code" type="password" autocomplete="off" /></label>
               <label id="ai-personal-wrap" hidden>My Gemini API key<input id="ai-personal-key" type="password" autocomplete="off" spellcheck="false" placeholder="Paste a key from Google AI Studio" /></label>
-              <div class="ai-model-row"><label>Gemini model<select id="ai-model"><option value="gemini-3.5-flash-lite">Default model</option></select></label><button id="ai-load-models" class="button secondary" type="button">Load models</button></div>
+              <div id="gemini-model-row" class="ai-model-row"><label>Gemini model<select id="ai-model"><option value="gemini-3.5-flash-lite">Default model</option></select></label><button id="ai-load-models" class="button secondary" type="button">Load models</button></div>
               <div class="button-row"><button id="ai-generate" class="button primary" type="button" disabled><img src="/icons/sparkles.svg" alt="" />Generate test cases</button><button id="ai-build" class="button secondary" type="button">Build prompt</button><button id="ai-copy" class="button secondary" type="button"><img src="/icons/copy.svg" alt="" />Copy prompt</button></div>
               <p id="ai-status" class="inline-message" role="status">Checking Gemini availability...</p>
-              <div id="ai-result-wrap" hidden><div class="ai-result-heading"><strong>Gemini draft</strong><button id="ai-copy-result" class="button secondary" type="button"><img src="/icons/copy.svg" alt="" />Copy draft</button></div><pre id="ai-result" class="ai-result" tabindex="0"></pre></div>
+              <div id="ai-result-wrap" hidden><div class="ai-result-heading"><strong>AI draft</strong><button id="ai-copy-result" class="button secondary" type="button"><img src="/icons/copy.svg" alt="" />Copy draft</button></div><pre id="ai-result" class="ai-result" tabindex="0"></pre></div>
               <label>Prompt for another AI tool<textarea id="ai-output" rows="9" readonly></textarea></label>
               <p class="fine-print">A personal API key is used for this request only and is not saved. This is not Google account sign-in. Do not enter private data. AI suggestions are not test evidence.</p>
             </div>
@@ -111,5 +123,6 @@
       </div>
     </div>
     <div id="toast-region" class="toast-region" aria-live="polite"></div>
+    <dialog id="chatgpt-welcome" aria-labelledby="chatgpt-welcome-title"><h2 id="chatgpt-welcome-title">You're using your ChatGPT plan</h2><p>Eligible AI requests in QA Lab use your ChatGPT plan and its limits. Manage this app's access and usage in ChatGPT settings.</p><div class="button-row"><button id="chatgpt-confirm-plan" class="button primary" type="button">Got it</button><a class="button secondary" href="https://chatgpt.com/settings/usage" target="_blank" rel="noopener noreferrer">Manage usage <img src="/icons/external-link.svg" alt="" /></a></div></dialog>
   </body>
 </html>

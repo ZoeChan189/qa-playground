@@ -1,6 +1,6 @@
 # AI-assisted testing exercise
 
-The AI-assisted page can call Gemini through the Node.js server to draft key test cases and one example test. Choose **Group API** (owner's key plus group code) or **My API key** (your own key for this request). It does not execute generated tests or assert that they passed. Without a key, **Build prompt** and **Copy prompt** still work.
+The AI-assisted page can call Gemini through the Node.js server to draft key test cases and one example test. Choose **Group API** (owner's key plus group code) or **My API key** (your own key for this request). Local QA Lab also offers **ChatGPT sign-in**, using the official OAuth/PKCE flow for eligible account plan usage; see [setup, limits and security](chatgpt-local.md). It does not execute generated tests or assert that they passed. Without credentials, **Build prompt** and **Copy prompt** still work.
 
 ## Configure locally or on Render
 

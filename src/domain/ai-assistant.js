@@ -60,7 +60,7 @@ export async function listGeminiModels({ apiKey, fetchImpl = fetch }) {
   }
 }
 
-const verifiedContract = {
+export const verifiedContract = {
   performance: "GET /api/perf/work?work=1..100 performs PBKDF2 work; invalid work returns 400, saturation returns 503. GET /api/perf/metrics reports active, peakActive, completed, rejected, p95Ms and heapUsedMb. k6 scripts in k6/stress.js, k6/spike.js and k6/soak.js target localhost by default. Do not recommend load against the public host.",
   api: "GET /api/health returns 200 JSON. POST /api/evaluate accepts p95Ms, errorRate (0..1), p95LimitMs and errorLimit (0..1); invalid values return 400 with field errors. GET /api/plans/:id returns 404 for missing IDs. Unknown /api routes return 404 JSON.",
   e2e: "The plan form collects name (3..40 characters), scenario (stress, spike or soak), targetVus (integer 1..50) and notes (up to 200 characters). Review, back and save call POST /api/plans; GET /api/plans/:id retrieves a saved plan. Plans are in memory and disappear after restart.",

@@ -8,6 +8,10 @@ Mỗi thành viên tải cùng mã nguồn và **chạy QA Lab cùng k6 trên m�
 
 ## Bổ sung ở bản 1.1.2
 
+**Cập nhật 1.3.0:** Nếu bấm Connect k6 báo `Unexpected token '<'`, nguyên nhân có thể là QA Lab cũ còn chạy ở cổng 4173 và trả trang HTML thay cho dữ liệu. Đóng các cửa sổ QA Lab cũ, tải bản mới, giải nén, chạy `setup-windows.cmd` trong đúng thư mục mới rồi kết nối lại. Bản mới kiểm tra trường hợp này và báo cách xử lý. Cửa sổ PowerShell đóng nhanh sau khi kết nối thành công là bình thường; lỗi thật sẽ có hộp thông báo và log tại `%LOCALAPPDATA%\QA Lab\logs`.
+
+Mục AI có thêm **ChatGPT sign-in** trên web local: mở `http://127.0.0.1:4173/#ai`, chọn cách kết nối này, bấm **Continue with ChatGPT**, tự đăng nhập trên trang OpenAI, quay lại QA Lab và bấm **Load models**. Tài khoản phải được OpenAI cho phép dùng gói ChatGPT trong app; đăng nhập thành công chưa chắc đã có quyền gọi model. Xem [hướng dẫn riêng](chatgpt-local.md). API Gemini vẫn giữ nguyên, không cần đăng nhập ChatGPT để dùng các topic khác.
+
 - **Recent runs** trong Performance giữ năm kết quả mới nhất đã hiện trên tab này, để nhìn lại p95, Error rate, VUs và ngưỡng của từng lượt. Đổi topic vẫn còn bảng; tải lại trang thì lịch sử này mất. **Clear** chỉ xóa lịch sử, không xóa kết quả hiện tại.
 - **Copy result** sao chép giá trị và bảng quyết định của topic đang xem. Dán vào Word bằng Ctrl+V để ghi lại bằng chứng. Không cần tìm file JSON. Nút không sao chép ô nhập API key.
 - API có thêm **equals limit**, **over limits**, **malformed JSON**. Ví dụ p95 = 500 và limit = 500: phép tính phải trả `passed: false`. Nếu API trả đúng như vậy thì API contract test vẫn PASS, vì server tính đúng điều kiện.
