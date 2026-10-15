@@ -35,7 +35,7 @@ const apiPresets = {
   missing: { method: "GET", url: "/api/not-found", body: "" },
 };
 let scenarios = null;
-let selectedScenario = "stress";
+let selectedScenario = profileCopy[location.hash.slice(1).split("/")[1]] ? location.hash.slice(1).split("/")[1] : "stress";
 const heapHistory = [];
 let aiReady = false;
 let aiRequiresCode = false;
@@ -218,7 +218,7 @@ function navigate(topic) {
 function syncRoute() {
   const { topic, scenario } = currentRoute();
   showTopic(topic);
-  if (topic === "performance" && scenarios) selectScenario(scenario, false);
+  if (topic === "performance") { selectedScenario = scenario; if (scenarios) selectScenario(scenario, false); }
 }
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -283,8 +283,9 @@ function populateCases(profile) {
 }
 
 function selectScenario(profile, updateHash = true) {
-  if (!scenarios?.[profile]) return;
   selectedScenario = profile;
+  if (!scenarios?.[profile]) { if (updateHash) location.hash = `#performance/${profile}`; return; }
+  byId("perf-vus").disabled = false;
   const config = scenarios[profile];
   document.querySelectorAll("[data-scenario]").forEach((button) => button.classList.toggle("selected", button.dataset.scenario === profile));
   byId("chart-title").textContent = profileCopy[profile].title;
@@ -541,7 +542,7 @@ async function connectedScenarios(code) {
 }
 
 function useConnectedScenarios(configs, code) {
-  const requestedPeak = Number(byId("perf-vus").value);
+  const requestedPeak = scenarios ? Number(byId("perf-vus").value) : configs[selectedScenario].peakVus;
   scenarios = configs;
   bridgeCode = code;
   bridgeConnected = true;
@@ -550,6 +551,7 @@ function useConnectedScenarios(configs, code) {
   latestAutoStatus = null;
   manualSummary = false;
   clearSummary();
+  byId("summary-file").disabled = false;
   selectScenario(selectedScenario, false);
   byId("perf-vus").value = String(requestedPeak);
   updatePeak();
@@ -1389,10 +1391,12 @@ window.addEventListener("message", (event) => {
 updateApiPreset();
 buildAiPrompt();
 byId("manual-pairing").hidden = localPage;
+byId("perf-vus").disabled = true;
 setVisualVariant("baseline");
 updateAiEvidence();
 loadAiStatus();
 checkHealth();
+syncRoute();
 fetch("/api/version", { cache: "no-store" }).then(async (response) => {
   if (!response.ok) return;
   const release = await response.json();
@@ -1402,14 +1406,13 @@ fetch("/api/version", { cache: "no-store" }).then(async (response) => {
 try {
   const response = await fetch("/api/perf/scenarios");
   if (!response.ok) throw new Error("Scenario data unavailable");
-  scenarios = (await response.json()).scenarios;
+  const data = await readJson(response, "QA Lab");
+  if (!bridgeConnected) { scenarios = data.scenarios; syncRoute(); }
   byId("summary-file").disabled = false;
-  syncRoute();
   pollTelemetry();
   pollLatestRun();
 } catch {
-  toast("Performance scenarios could not be loaded.", true);
-  syncRoute();
+  if (!bridgeConnected) { toast("Performance scenarios could not be loaded.", true); syncRoute(); }
 }
 setInterval(() => { if (!document.hidden) { checkHealth(); pollTelemetry(); pollLatestRun(); } }, 2000);
 setInterval(() => { if (!document.hidden && aiMode === "chatgpt" && localPage && !chatGptPending && !aiBusy && !aiModelsPending) pollChatGptStatus(); }, 3000);

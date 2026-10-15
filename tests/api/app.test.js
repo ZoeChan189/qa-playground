@@ -55,7 +55,7 @@ describe("QA Lab API", () => {
   it("identifies the deployed version and never caches mutable app assets", async () => {
     vi.stubEnv("RENDER_GIT_COMMIT", "a".repeat(40));
     const version = await request(app).get("/api/version");
-    expect(version.body).toEqual({ version: "1.3.0", commit: "a".repeat(40) });
+    expect(version.body).toEqual({ version: "1.3.1", commit: "a".repeat(40) });
     expect(version.headers["cache-control"]).toBe("no-store");
     for (const asset of ["/", "/app.js", "/styles.css", "/shared/test-evidence.js", "/vendor/html2canvas.js", "/some-route"]) {
       const result = await request(app).get(asset);

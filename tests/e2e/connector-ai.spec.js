@@ -109,3 +109,39 @@ test("a delayed initial saved result does not replace an imported summary", asyn
   await expect(page.locator("#summary-requests")).toHaveText("123");
   await expect(page.locator("#perf-outcome-title")).toContainText("NOT VERIFIED");
 });
+
+test("connecting before hosted profiles finish preserves the chosen scenario and local duration", async ({ page, baseURL }) => {
+  const origin = "https://qa-lab.example";
+  const hosted = (await (await page.request.get(`${baseURL}/api/perf/scenarios`)).json()).scenarios;
+  const local = structuredClone(hosted);
+  local.soak.stages[1].seconds = 180;
+  let release;
+  const ready = new Promise((resolve) => { release = resolve; });
+  await page.route(`${origin}/**`, async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/api/perf/scenarios") { await ready; return route.fulfill({ json: { scenarios: hosted } }); }
+    if (url.pathname === "/api/perf/runs/latest") return route.fulfill({ json: { canRun: false, reason: "hosted", run: null } });
+    return route.fulfill({ response: await page.request.get(`${baseURL}${url.pathname}${url.search}`) });
+  });
+  await page.route("http://127.0.0.1:4173/local-bridge/**", (route) => {
+    const headers = { "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Headers": "X-QA-Bridge-Code", "Access-Control-Allow-Private-Network": "true" };
+    if (route.request().method() === "OPTIONS") return route.fulfill({ headers, status: 204 });
+    return route.fulfill({ headers, json: route.request().url().endsWith("/scenarios") ? { scenarios: local } : { canRun: true, run: null } });
+  });
+  await page.goto(`${origin}/#performance/soak`);
+  await expect(page.locator("#perf-vus")).toBeDisabled();
+  await page.locator("#manual-pairing summary").click();
+  await page.locator("#bridge-code").fill("test-code");
+  await page.locator("#bridge-connect").click();
+  await expect(page.locator("#bridge-status")).toContainText("Connected.");
+  await expect(page.locator("#profile-name")).toHaveText("Soak");
+  await expect(page.locator("#chart-duration")).toHaveText("190 seconds");
+  await expect(page.locator("#perf-vus")).toHaveValue("10");
+  await page.locator("#perf-vus").fill("15");
+  const response = page.waitForResponse(`${origin}/api/perf/scenarios`);
+  release();
+  await response;
+  await expect(page.locator("#chart-duration")).toHaveText("190 seconds");
+  await expect(page.locator("#profile-name")).toHaveText("Soak");
+  await expect(page.locator("#perf-vus")).toHaveValue("15");
+});

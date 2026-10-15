@@ -2,10 +2,11 @@
 
 One small, real web application for SWT301 testing demonstrations. **Performance testing is the main topic**: k6 sends HTTP traffic to an actual CPU-bound Node.js API, while the browser shows server telemetry and reads k6 summaries. The other seven topics have focused, runnable cases. This is a teaching target, not a commercial service or a clone of the named testing tools.
 
-## Version 1.3.0
+## Version 1.3.1
 
 - Connector startup checks the QA Lab version and real JSON scenario endpoint. An older server occupying port 4173 is reported clearly instead of producing `Unexpected token '<'`.
 - Startup failures show an actionable Windows dialog and save diagnostics under `%LOCALAPPDATA%\QA Lab\logs`. A successfully connected hidden launcher may close immediately; this is normal.
+- Connecting before the hosted catalog finishes loading preserves the requested scenario, the local Soak duration and edited VUs. Late hosted responses no longer replace local configuration.
 - **AI-assisted > ChatGPT sign-in** is available in the **local** app. The official OAuth/PKCE flow, account model catalog and completed streamed drafts use eligible ChatGPT plan access, not a copied API key. Gemini group/personal-key modes remain available. See [the ChatGPT guide](docs/chatgpt-local.md) for account restrictions and setup.
 
 After upgrading: stop every older QA Lab server, install the latest copy with `setup-windows.cmd`, then Connect k6 again. Do not run an old Downloads copy alongside the new one.
