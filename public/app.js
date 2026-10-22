@@ -923,6 +923,7 @@ function reviewPlan(event) {
 async function savePlan() {
   byId("plan-save-error").textContent = "";
   byId("plan-save").disabled = true;
+  byId("plan-back").disabled = true;
   const checks = [];
   const payload = planPayload();
   e2eResult = null;
@@ -948,7 +949,10 @@ async function savePlan() {
     e2eResult = { passed: false, width: document.documentElement.clientWidth };
     byId("plan-save-error").textContent = error.message;
     showE2eEvidence([["Valid fields", "4 / 4"], ["Save response", "Failed"], ["Retrieved plan", "Not verified"]], `FAIL · ${error.message}`, "fail", checks);
-  } finally { byId("plan-save").disabled = false; }
+  } finally {
+    byId("plan-save").disabled = false;
+    byId("plan-back").disabled = false;
+  }
 }
 
 function measureMobile() {

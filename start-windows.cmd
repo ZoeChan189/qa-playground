@@ -5,7 +5,7 @@ where node >nul 2>nul
 if errorlevel 1 goto missing_node
 where npm >nul 2>nul
 if errorlevel 1 goto missing_node
-node -e "process.exit(Number(process.versions.node.split('.')[0]) >= 20 ? 0 : 1)"
+node -e "const [major,minor]=process.versions.node.split('.').map(Number);process.exit((major===20&&minor>=19)||(major===22&&minor>=12)||major>=24?0:1)"
 if errorlevel 1 goto old_node
 
 if not exist node_modules (
@@ -24,12 +24,13 @@ pause
 exit /b %errorlevel%
 
 :missing_node
-echo Node.js and npm are required. Install Node.js 20+ from https://nodejs.org/en/download
+echo Node.js and npm are required. Install Node.js LTS from https://nodejs.org/en/download
 pause
 exit /b 2
 
 :old_node
-echo Node.js 20 or newer is required. Update it at https://nodejs.org/en/download
+echo Update Node.js LTS at https://nodejs.org/en/download
+echo Supported versions: 20.19+, 22.12+, or 24+; not 21/23.
 pause
 exit /b 2
 

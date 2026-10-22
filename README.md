@@ -2,7 +2,17 @@
 
 One small, real web application for SWT301 testing demonstrations. **Performance testing is the main topic**: k6 sends HTTP traffic to an actual CPU-bound Node.js API, while the browser shows server telemetry and reads k6 summaries. The other seven topics have focused, runnable cases. This is a teaching target, not a commercial service or a clone of the named testing tools.
 
-## Version 1.3.1
+## Version 1.3.2
+
+- Download the focused [Vietnamese update guide](docs/QA_Lab_Huong_dan_cap_nhat_1.3.2.docx) when upgrading an existing installation. It adds only the changed running steps.
+- See the [final check and measured local k6 results](docs/final-check-2026-10-22.md), including the distinction between real local tests and mocked provider checks.
+- `stop-windows.cmd` stops an identified local QA Lab server, including a hidden connector server, without stopping other Node applications. It refuses while a k6 run is active.
+- The E2E Back button waits until saving/read-back finishes, so an older result cannot be shown against edited fields.
+- Connector version checks reject malformed releases and incompatible major versions.
+- Patched test dependencies remove the npm audit findings identified in the final review.
+- Windows setup/start validate the minimum Node minor release required by the test libraries: 20.19+, 22.12+, or 24+ (not 21/23). Use a current Node LTS.
+
+## Earlier 1.3.1 Changes
 
 - Connector startup checks the QA Lab version and real JSON scenario endpoint. An older server occupying port 4173 is reported clearly instead of producing `Unexpected token '<'`.
 - Startup failures show an actionable Windows dialog and save diagnostics under `%LOCALAPPDATA%\QA Lab\logs`. A successfully connected hidden launcher may close immediately; this is normal.
@@ -22,7 +32,7 @@ Download the [complete Vietnamese Word handbook](docs/QA_Lab_Huong_dan_cap_nhat_
 3. Open the hosted Performance page and click **Connect k6**. Allow the browser to open QA Lab and access the local network. The connector starts the local API automatically and pairs the current tab without copying a code.
 4. Choose Stress, Spike or Soak and click **Run local k6**. All measurements and decisions appear on the page. For an independent local page, double-click `start-windows.cmd` and open <http://localhost:4173>. `run-performance-windows.cmd` is optional when you want saved JSON evidence.
 
-If Node.js is missing or older than 20, install [Node.js 20+](https://nodejs.org/en/download), reopen the terminal, and try again. Other desktop platforms can run `npm ci` then `npm start`. A visitor browsing the hosted copy only needs a browser; someone running local k6 also needs Node.js, k6 and a local QA Lab copy. The core lab needs no database or paid service. Gemini is optional.
+If Node.js is missing or below the supported minimum, install [Node.js LTS](https://nodejs.org/en/download), reopen the terminal, and try again. Supported releases are 20.19+, 22.12+, or 24+ (not 21/23). Other desktop platforms can run `npm ci` then `npm start`. A visitor browsing the hosted copy only needs a browser; someone running local k6 also needs Node.js, k6 and a local QA Lab copy. The core lab needs no database or paid service. Gemini is optional.
 
 ## What to click
 

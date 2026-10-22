@@ -16,7 +16,7 @@ describe("connector startup compatibility", () => {
     await expect(inspectConnector({}, { fetchImpl: async () => { throw new Error("timeout"); } })).rejects.toThrow(/port 4173/);
     await expect(inspectConnector({}, { fetchImpl: async () => json({ service: "another-app" }) })).rejects.toThrow(/another application/);
   });
-  it.each(["1.1.0", "1.2.0", "0.9.9", "bad"])("rejects incompatible server %s before pairing", async (version) => {
+  it.each(["1.1.0", "1.2.0", "0.9.9", "bad", "2.0.0", "9.3.1", "1.3.", "1..3", "1.3. "])("rejects incompatible server %s before pairing", async (version) => {
     const fetchImpl = vi.fn().mockResolvedValueOnce(json({ service: "qa-lab" })).mockResolvedValueOnce(json({ version }));
     await expect(inspectConnector({}, { fetchImpl })).rejects.toThrow(/older or incompatible/);
   });

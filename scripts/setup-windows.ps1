@@ -11,8 +11,8 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Install Node.js LTS from https://nodejs.org/en/download, then run setup again.' }
         Refresh-UserPath
     }
-    & node.exe -e "process.exit(Number(process.versions.node.split('.')[0]) >= 20 ? 0 : 1)"
-    if ($LASTEXITCODE -ne 0) { throw 'Node.js 20+ is required. Update Node.js, then run setup again.' }
+    & node.exe -e "const [major,minor]=process.versions.node.split('.').map(Number);process.exit((major===20&&minor>=19)||(major===22&&minor>=12)||major>=24?0:1)"
+    if ($LASTEXITCODE -ne 0) { throw 'Update Node.js LTS, then run setup again. Supported: 20.19+, 22.12+, or 24+ (not 21/23).' }
     if (!(Get-Command k6.exe -ErrorAction SilentlyContinue)) {
         Write-Host 'Installing the official Grafana k6 portable release for this Windows user...'
         $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/grafana/k6/releases/latest'

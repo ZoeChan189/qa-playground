@@ -12,9 +12,10 @@ export async function inspectConnector(pair, { fetchImpl = fetch, port = 4173 } 
   const status = await fetchImpl(`http://127.0.0.1:${port}/api/version`, { signal: AbortSignal.timeout(2000) });
   const version = await readJson(status, "Local connector");
   // Older servers expose a pairing pipe but serve HTML for missing bridge routes.
-  const parts = String(version.version || "").split(".").map(Number);
-  if (!status.ok || parts.length !== 3 || parts.some((part) => !Number.isInteger(part) || part < 0)
-    || (parts[0] === 1 && parts[1] < 3) || parts[0] < 1) {
+  const release = String(version.version || "");
+  const parts = release.split(".").map(Number);
+  if (!status.ok || !/^\d+\.\d+\.\d+$/.test(release) || parts.some((part) => !Number.isSafeInteger(part))
+    || parts[0] !== 1 || parts[1] < 3) {
     throw new Error(`An older or incompatible QA Lab is already using port ${port}. ${connectorHelp}`);
   }
   return true;
